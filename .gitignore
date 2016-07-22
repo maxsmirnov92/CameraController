@@ -1,0 +1,35 @@
+.DS_Store
+/captures
+#################
+## Android Studio project files
+*.iml
+*.ipr
+*.iws
+.idea/
+
+#################
+# TeamCity is a build add-in
+_TeamCity*
+
+#################
+# generated files
+build/
+
+#################
+# Gradle
+.gradle/
+
+.classpath
+.project
+build
+bin
+gen
+proguard-project.txt
+project.properties
+out
+local.*
+app/build
+!build.gradle
+.*
+!.gitignore
+!.travis.yml
