@@ -31,6 +31,10 @@ import android.view.SurfaceView;
 import android.view.ViewGroup.LayoutParams;
 import android.view.WindowManager;
 
+import net.maxsmr.commonutils.data.FileHelper;
+import net.maxsmr.commonutils.graphic.GraphicUtils;
+import net.maxsmr.tasksutils.taskrunnable.TaskRunnable;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -59,9 +63,6 @@ import ru.altarix.cameracontroller.settings.video.VIDEO_ENCODER;
 import ru.altarix.cameracontroller.settings.video.VIDEO_QUALITY;
 import ru.altarix.cameracontroller.settings.video.record.VideoRecordLimit;
 import ru.altarix.cameracontroller.settings.video.record.VideoSettings;
-import ru.altarix.commonutils.data.FileHelper;
-import ru.altarix.commonutils.graphic.GraphicUtils;
-import ru.altarix.tasksutils.taskrunnable.TaskRunnable;
 
 
 @SuppressWarnings({"SynchronizeOnNonFinalField", "deprecation"})
@@ -3546,11 +3547,12 @@ public class CameraController {
 
         @Override
         protected boolean checkArgs() {
-            return false;
+            return true;
         }
 
         @Override
         public void run() {
+            super.run();
             doMakePreview();
         }
 

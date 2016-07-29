@@ -1,0 +1,28 @@
+language: android
+
+android:
+  components:
+    - platform-tools
+    - tools
+    - android-23
+    - build-tools-23.0.3
+    - extra-android-m2repository
+
+script:
+    - ./gradlew clean
+    - ./gradlew assembleRelease
+    - ./gradlew uploadArchives
+    - ./gradlew generateBintrayJson
+
+jdk:
+  - oraclejdk7
+
+cache:
+  directories:
+    - $HOME/.gradle
+
+deploy:
+  provider: bintray
+  file: "bintray.json"
+  user: "maxsmirnov92"
+  key: $BINTRAY_API_KEY

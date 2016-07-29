@@ -1,9 +1,10 @@
 package ru.altarix.cameracontroller.executors.info;
 
+import net.maxsmr.tasksutils.taskrunnable.RunnableInfo;
+
 import java.io.File;
 import java.io.Serializable;
 
-import ru.altarix.tasksutils.taskrunnable.RunnableInfo;
 import ru.altarix.cameracontroller.settings.video.record.VideoSettings;
 
 

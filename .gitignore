@@ -30,6 +30,8 @@ out
 local.*
 app/build
 !build.gradle
+
 .*
 !.gitignore
 !.travis.yml
+bintray.json

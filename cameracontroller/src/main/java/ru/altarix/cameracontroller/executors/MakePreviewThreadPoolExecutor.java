@@ -1,5 +1,9 @@
 package ru.altarix.cameracontroller.executors;
 
+import net.maxsmr.commonutils.data.FileHelper;
+import net.maxsmr.tasksutils.AbstractSyncThreadPoolExecutor;
+import net.maxsmr.tasksutils.taskrunnable.TaskRunnable;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -8,9 +12,6 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
-import ru.altarix.commonutils.data.FileHelper;
-import ru.altarix.tasksutils.AbstractSyncThreadPoolExecutor;
-import ru.altarix.tasksutils.taskrunnable.TaskRunnable;
 import ru.altarix.cameracontroller.CameraController;
 import ru.altarix.cameracontroller.executors.info.MakePreviewRunnableInfo;
 

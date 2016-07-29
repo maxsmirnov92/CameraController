@@ -1,8 +1,18 @@
 apply plugin: 'com.android.library'
+apply plugin: 'maven'
+
+def groupId = "net.maxsmr"
+def artifactId = "cameracontroller"
+def version = "1.0"
+
+def releaseDir = "${buildDir}/release"
 
 android {
     compileSdkVersion 23
     buildToolsVersion "23.0.3"
+
+    sourceCompatibility = 1.7
+    targetCompatibility = 1.7
 
     defaultConfig {
         minSdkVersion 11
@@ -19,6 +29,12 @@ android {
         debug {
         }
     }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_7
+        targetCompatibility JavaVersion.VERSION_1_7
+    }
+
     lintOptions {
         // Don't abort if Lint finds an error, otherwise the Jenkins build
         // will be marked as failed, and Jenkins won't analyse the Lint output
@@ -26,7 +42,31 @@ android {
     }
 }
 
+configurations {
+    javadocDependencies
+}
+
+task sourcesJar(type: Jar) {
+    classifier = 'sources'
+    from android.sourceSets.main.java.srcDirs
+}
+
+uploadArchives {
+    repositories.mavenDeployer {
+        pom.groupId = groupId
+        pom.artifactId = artifactId
+        pom.version = version
+        repository(url: "file://${releaseDir}")
+    }
+}
+
+artifacts {
+    archives sourcesJar
+//    archives javaDocsJar
+}
+
 dependencies {
     compile fileTree(dir: 'libs', include: ['*.jar'])
-    testCompile 'junit:junit:4.12'
+
+    compile 'net.maxsmr:tasksutils:1.0'
 }
