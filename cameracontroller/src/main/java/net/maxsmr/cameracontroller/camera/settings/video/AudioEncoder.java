@@ -1,23 +1,23 @@
-package ru.altarix.cameracontroller.settings.video;
+package net.maxsmr.cameracontroller.camera.settings.video;
 
 import java.lang.reflect.Field;
 
-public enum VIDEO_ENCODER {
+public enum AudioEncoder {
 
 	DEFAULT(0, "DEFAULT"),
 
-	H263(1, "H263"),
+	AAC(1, "AAC"),
 
-	H264(2, "H264"),
+	AMR_NB(2, "AMR_NB"),
 
-	MPEG_4_SP(3, "MPEG_4_SP");
+	AMR_WB(3, "AMR_WB");
 
-	VIDEO_ENCODER(int id, String constValue) {
+	AudioEncoder(int id, String constValue) {
 		this.id = id;
 		this.constantValue = constValue;
 	}
 
-	private static final String constantClassName = "android.media.MediaRecorder$VideoEncoder";
+	private static final String constantClassName = "android.media.MediaRecorder$AudioEncoder";
 	private final String constantValue;
 	private final int id;
 
@@ -59,14 +59,14 @@ public enum VIDEO_ENCODER {
 		return -1;
 	}
 
-	public static VIDEO_ENCODER fromNativeValue(int value) throws IllegalArgumentException {
+	public static AudioEncoder fromValue(int value) throws IllegalArgumentException {
 
-		for (VIDEO_ENCODER videoEncoder : VIDEO_ENCODER.values()) {
-			if (videoEncoder.getValue() == value) {
-				return videoEncoder;
+		for (AudioEncoder audioEncoder : AudioEncoder.values()) {
+			if (audioEncoder.getValue() == value) {
+				return audioEncoder;
 			}
 		}
+		throw new IllegalArgumentException("Incorrect native value for enum type " + AudioEncoder.class.getName() + ": " + value);
 
-		throw new IllegalArgumentException("Incorrect native value for enum type " + VIDEO_ENCODER.class.getName() + ": " + value);
 	}
 }

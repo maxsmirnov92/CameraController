@@ -1,31 +1,30 @@
-package ru.altarix.cameracontroller.executors;
+package net.maxsmr.cameracontroller.executors;
 
+import net.maxsmr.cameracontroller.logger.base.Logger;
 import net.maxsmr.commonutils.data.FileHelper;
-import net.maxsmr.tasksutils.AbstractSyncThreadPoolExecutor;
-import net.maxsmr.tasksutils.taskrunnable.TaskRunnable;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import net.maxsmr.tasksutils.taskexecutor.AbsTaskRunnableExecutor;
+import net.maxsmr.tasksutils.taskexecutor.TaskRunnable;
 
 import java.io.File;
 import java.util.Arrays;
-import java.util.List;
+import java.util.Collection;
 import java.util.concurrent.TimeUnit;
 
-import ru.altarix.cameracontroller.CameraController;
-import ru.altarix.cameracontroller.executors.info.MakePreviewRunnableInfo;
+import net.maxsmr.cameracontroller.camera.CameraController;
+import net.maxsmr.cameracontroller.executors.info.MakePreviewRunnableInfo;
 
-public class MakePreviewThreadPoolExecutor extends AbstractSyncThreadPoolExecutor {
-
-    private final static Logger logger = LoggerFactory.getLogger(MakePreviewThreadPoolExecutor.class);
+public class MakePreviewThreadPoolExecutor extends AbsTaskRunnableExecutor {
 
     private final static int KEEP_ALIVE_TIME = 60;
 
+    private final Logger logger;
+
     private final CameraController cameraController = CameraController.getInstance();
 
-    public MakePreviewThreadPoolExecutor(int poolSize, boolean syncQueue, String queueDirPath) {
+    public MakePreviewThreadPoolExecutor(int poolSize, boolean syncQueue, String queueDirPath, Logger logger) {
         super(poolSize, poolSize, KEEP_ALIVE_TIME, TimeUnit.SECONDS, "MakePreviewThread", syncQueue, queueDirPath);
-        logger.debug("MakePreviewThreadPoolExecutor(), poolSize=" + poolSize + ", syncQueue=" + syncQueue + ", queueDirPath="
+        this.logger = logger;
+        this.logger.debug("MakePreviewThreadPoolExecutor(), poolSize=" + poolSize + ", syncQueue=" + syncQueue + ", queueDirPath="
                 + queueDirPath);
     }
 
@@ -33,19 +32,14 @@ public class MakePreviewThreadPoolExecutor extends AbstractSyncThreadPoolExecuto
     protected synchronized boolean restoreTaskRunnablesFromFiles() {
         logger.debug("restoreTaskRunnablesFromFiles()");
 
-        if (!FileHelper.testDirNoThrow(queueDirPath)) {
+        if (!FileHelper.checkDirNoThrow(queueDirPath)) {
             logger.error("incorrect queue dir path: " + queueDirPath);
             return false;
         }
 
         File queueDir = new File(queueDirPath);
 
-        List<File> filesList = FileHelper.sortFilesByLastModified(Arrays.asList(queueDir.listFiles()), false, false);
-
-        if (filesList == null || filesList.size() == 0) {
-            logger.error("filesList is null or empty");
-            return false;
-        }
+        Collection<File> filesList = FileHelper.sortFilesByLastModified(Arrays.asList(queueDir.listFiles()), false, false);
 
         int restoreCount = 0;
 
@@ -79,14 +73,9 @@ public class MakePreviewThreadPoolExecutor extends AbstractSyncThreadPoolExecuto
                 }
 
                 logger.debug(" _ taskRunnable from byte array: " + taskRunnable);
-                if (execute(taskRunnable)) {
-                    restoreCount++;
-                } else {
-                    logger.error("taskRunnable " + taskRunnable + " was not added to runnable queue, deleting file " + f + "...");
-                    if (!f.delete()) {
-                        logger.error("can't delete file");
-                    }
-                }
+                execute(taskRunnable);
+                restoreCount++;
+
             } else {
                 logger.error("incorrect TaskRunnable file: " + f + ", deleting...");
                 if (!f.delete()) {

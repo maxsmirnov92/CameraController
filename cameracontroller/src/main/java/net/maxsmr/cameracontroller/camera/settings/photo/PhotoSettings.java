@@ -1,4 +1,4 @@
-package ru.altarix.cameracontroller.settings.photo;
+package net.maxsmr.cameracontroller.camera.settings.photo;
 
 import android.hardware.Camera.Size;
 
@@ -6,9 +6,9 @@ import com.google.gson.annotations.Expose;
 
 import java.io.Serializable;
 
-import ru.altarix.cameracontroller.settings.COLOR_EFFECT;
-import ru.altarix.cameracontroller.settings.FLASH_MODE;
-import ru.altarix.cameracontroller.settings.FOCUS_MODE;
+import net.maxsmr.cameracontroller.camera.settings.ColorEffect;
+import net.maxsmr.cameracontroller.camera.settings.FlashMode;
+import net.maxsmr.cameracontroller.camera.settings.FocusMode;
 
 public class PhotoSettings implements Serializable {
 
@@ -17,8 +17,8 @@ public class PhotoSettings implements Serializable {
     public PhotoSettings() {
     }
 
-    public PhotoSettings(IMAGE_FORMAT pictureFormat,
-                         Size pictureSize, int jpegQuality, FLASH_MODE flashMode, FOCUS_MODE focusMode, COLOR_EFFECT effect) {
+    public PhotoSettings(ImageFormat pictureFormat,
+                         Size pictureSize, int jpegQuality, FlashMode flashMode, FocusMode focusMode, ColorEffect effect) {
 
 //        setParentDirPath(parentDirPath);
 //        setFileName(fileName);
@@ -58,15 +58,15 @@ public class PhotoSettings implements Serializable {
 //        }
 //    }
 
-    public final static IMAGE_FORMAT DEFAULT_IMAGE_FORMAT = IMAGE_FORMAT.JPEG;
+    public final static ImageFormat DEFAULT_IMAGE_FORMAT = ImageFormat.JPEG;
     @Expose
-    IMAGE_FORMAT pictureFormat = DEFAULT_IMAGE_FORMAT;
+    ImageFormat pictureFormat = DEFAULT_IMAGE_FORMAT;
 
-    public IMAGE_FORMAT getPictureFormat() {
+    public ImageFormat getPictureFormat() {
         return pictureFormat;
     }
 
-    public boolean setPictureFormat(IMAGE_FORMAT pictureFormat) {
+    public boolean setPictureFormat(ImageFormat pictureFormat) {
         if (pictureFormat != null && pictureFormat.isPictureFormat()) {
             this.pictureFormat = pictureFormat;
             return true;
@@ -119,39 +119,39 @@ public class PhotoSettings implements Serializable {
         }
     }
 
-    public final static FLASH_MODE DEFAULT_FLASH_MODE = FLASH_MODE.AUTO;
+    public final static FlashMode DEFAULT_FLASH_MODE = FlashMode.AUTO;
     @Expose
-    FLASH_MODE flashMode = DEFAULT_FLASH_MODE;
+    FlashMode flashMode = DEFAULT_FLASH_MODE;
 
-    public FLASH_MODE getFlashMode() {
+    public FlashMode getFlashMode() {
         return flashMode;
     }
 
-    public void setFlashMode(FLASH_MODE flashMode) {
+    public void setFlashMode(FlashMode flashMode) {
         this.flashMode = flashMode;
     }
 
-    public final static FOCUS_MODE DEFAULT_FOCUS_MODE = FOCUS_MODE.AUTO;
+    public final static FocusMode DEFAULT_FOCUS_MODE = FocusMode.AUTO;
     @Expose
-    FOCUS_MODE focusMode = DEFAULT_FOCUS_MODE;
+    FocusMode focusMode = DEFAULT_FOCUS_MODE;
 
-    public FOCUS_MODE getFocusMode() {
+    public FocusMode getFocusMode() {
         return focusMode;
     }
 
-    public void setFocusMode(FOCUS_MODE focusMode) {
+    public void setFocusMode(FocusMode focusMode) {
         this.focusMode = focusMode;
     }
 
-    public final static COLOR_EFFECT DEFAULT_COLOR_EFFECT = COLOR_EFFECT.NONE;
+    public final static ColorEffect DEFAULT_COLOR_EFFECT = ColorEffect.NONE;
     @Expose
-    COLOR_EFFECT colorEffect = DEFAULT_COLOR_EFFECT;
+    ColorEffect colorEffect = DEFAULT_COLOR_EFFECT;
 
-    public COLOR_EFFECT getColorEffect() {
+    public ColorEffect getColorEffect() {
         return colorEffect;
     }
 
-    public void setColorEffect(COLOR_EFFECT effect) {
+    public void setColorEffect(ColorEffect effect) {
         this.colorEffect = effect;
     }
 

@@ -1,22 +1,49 @@
+buildscript {
+    repositories {
+        jcenter()
+    }
+    dependencies {
+
+        classpath 'com.jfrog.bintray.gradle:gradle-bintray-plugin:1.7.3'
+        classpath 'com.github.dcendents:android-maven-gradle-plugin:1.4.1'
+    }
+}
+
+repositories {
+    jcenter()
+}
+
 apply plugin: 'com.android.library'
+
+apply plugin: 'com.jfrog.bintray'
 apply plugin: 'maven'
+apply plugin: 'maven-publish'
 
-def groupId = "net.maxsmr"
-def artifactId = "cameracontroller"
-def version = "1.0"
 
-def releaseDir = "${buildDir}/release"
+def siteUrl = 'https://github.com/maxsmirnov92/CameraController'
+def gitUrl = 'https://github.com/maxsmirnov92/CameraController.git'
+
+def localReleaseDest = project.hasProperty("LOCAL_REPO") ? "${rootProject.projectDir}/${project.LOCAL_REPO}" : "${rootProject.buildDir}/release/repo"
+
 
 android {
-    compileSdkVersion 23
-    buildToolsVersion "23.0.3"
+
+    signingConfigs {
+        release {
+            keyAlias 'maxsmirnov'
+            storeFile file('~/.android/release-key.keystore')
+        }
+    }
+
+    compileSdkVersion sdkVersion
+    buildToolsVersion buildToolsVersion_
 
     sourceCompatibility = 1.7
     targetCompatibility = 1.7
 
     defaultConfig {
-        minSdkVersion 11
-        targetSdkVersion 23
+        minSdkVersion minSdkVersion_
+        targetSdkVersion sdkVersion
         versionCode Integer.parseInt(System.getenv("BUILD_NUMBER") ?: "1")
         ext.buildNumber = System.getenv("BUILD_NUMBER") ?: "dev"
         versionName "1.0.$buildNumber"
@@ -24,7 +51,7 @@ android {
     buildTypes {
         release {
             minifyEnabled false
-//            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
         debug {
         }
@@ -40,6 +67,9 @@ android {
         // will be marked as failed, and Jenkins won't analyse the Lint output
         abortOnError false
     }
+    testOptions {
+        unitTests.returnDefaultValues = true
+    }
 }
 
 configurations {
@@ -51,22 +81,69 @@ task sourcesJar(type: Jar) {
     from android.sourceSets.main.java.srcDirs
 }
 
-uploadArchives {
-    repositories.mavenDeployer {
-        pom.groupId = groupId
-        pom.artifactId = artifactId
-        pom.version = version
-        repository(url: "file://${releaseDir}")
-    }
-}
 
 artifacts {
     archives sourcesJar
-//    archives javaDocsJar
 }
 
 dependencies {
-    compile fileTree(dir: 'libs', include: ['*.jar'])
+    implementation fileTree(dir: 'libs', include: ['*.jar'])
 
-    compile 'net.maxsmr:tasksutils:1.0'
+    implementation "net.maxsmr:tasksutils:$taskUtilsVersion"
+}
+
+uploadArchives {
+    repositories.mavenDeployer {
+        pom.groupId = groupIdName
+        pom.artifactId = project.archivesBaseName
+        pom.version = cameraControllerVersion
+        repository(url: "file://${localReleaseDest}")
+    }
+}
+
+bintray {
+    user = project.hasProperty('bintrayUser') ? project.property('bintrayUser') : System.getenv('BINTRAY_USER')
+    key = project.hasProperty('bintrayApiKey') ? project.property('bintrayApiKey') : System.getenv('BINTRAY_API_KEY')
+    dryRun = false //[Default: false] Whether to run this as dry-run, without deploying
+    publish = true //[Default: false] Whether version should be auto published after an upload
+    override = false //[Default: false] Whether to override version artifacts already published
+    publications = ['artifactPublication']
+    pkg {
+        repo = 'maven'
+        name = rootProject.name /*+ File.separator + project.name*/
+        userOrg = user
+        websiteUrl = siteUrl
+        licenses = ['Apache-2.0']
+        vcsUrl = gitUrl
+        version {
+            name = cameraControllerVersion
+        }
+        publicDownloadNumbers = true
+    }
+}
+
+publishing {
+    publications {
+        artifactPublication(MavenPublication) {
+            groupId = groupIdName
+            artifactId = project.archivesBaseName
+            version = cameraControllerVersion
+            artifact "${project.buildDir}/outputs/aar/${archivesBaseName}-release.aar"
+            artifact sourcesJar
+
+            pom.withXml {
+                def dependenciesNode = asNode().appendNode('dependencies')
+
+                //Iterate over the compile dependencies (we don't want the test ones), adding a <dependency> node for each
+                configurations.compile.allDependencies.each {
+                    if (it.group != null) {
+                        def dependencyNode = dependenciesNode.appendNode('dependency')
+                        dependencyNode.appendNode('groupId', it.group)
+                        dependencyNode.appendNode('artifactId', it.name)
+                        dependencyNode.appendNode('version', it.version)
+                    }
+                }
+            }
+        }
+    }
 }

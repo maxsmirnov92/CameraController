@@ -1,4 +1,4 @@
-package ru.altarix.cameracontroller.settings.video.record;
+package net.maxsmr.cameracontroller.camera.settings.video.record;
 
 import android.hardware.Camera.Size;
 import android.media.CamcorderProfile;
@@ -10,12 +10,12 @@ import org.slf4j.LoggerFactory;
 
 import java.io.Serializable;
 
-import ru.altarix.cameracontroller.settings.COLOR_EFFECT;
-import ru.altarix.cameracontroller.settings.FLASH_MODE;
-import ru.altarix.cameracontroller.settings.FOCUS_MODE;
-import ru.altarix.cameracontroller.settings.video.AUDIO_ENCODER;
-import ru.altarix.cameracontroller.settings.video.VIDEO_ENCODER;
-import ru.altarix.cameracontroller.settings.video.VIDEO_QUALITY;
+import net.maxsmr.cameracontroller.camera.settings.ColorEffect;
+import net.maxsmr.cameracontroller.camera.settings.FlashMode;
+import net.maxsmr.cameracontroller.camera.settings.FocusMode;
+import net.maxsmr.cameracontroller.camera.settings.video.AudioEncoder;
+import net.maxsmr.cameracontroller.camera.settings.video.VideoEncoder;
+import net.maxsmr.cameracontroller.camera.settings.video.VideoQuality;
 
 public class VideoSettings implements Serializable {
 
@@ -32,8 +32,8 @@ public class VideoSettings implements Serializable {
      * @param frameRate 0 - auto, measured frame rate will be applied (if it was already calculated), (0..30] - custom
      *                  frame rate
      */
-    public VideoSettings(int cameraId, VIDEO_QUALITY quality, VIDEO_ENCODER videoEncoder, AUDIO_ENCODER audioEncoder, boolean disableAudio,
-                         Size videoSize, int frameRate, FLASH_MODE flashMode, FOCUS_MODE focusMode, COLOR_EFFECT effect,
+    public VideoSettings(int cameraId, VideoQuality quality, VideoEncoder videoEncoder, AudioEncoder audioEncoder, boolean disableAudio,
+                         Size videoSize, int frameRate, FlashMode flashMode, FocusMode focusMode, ColorEffect effect,
                          boolean enableMakePreview, int previewGridSize) {
 
 //        setParentDirPath(parentDirPath);
@@ -82,9 +82,9 @@ public class VideoSettings implements Serializable {
 //    }
 
     @Expose
-    VIDEO_QUALITY quality = VIDEO_QUALITY.DEFAULT;
+    VideoQuality quality = VideoQuality.DEFAULT;
 
-    public VIDEO_QUALITY getQuality() {
+    public VideoQuality getQuality() {
         return quality;
     }
 
@@ -92,8 +92,8 @@ public class VideoSettings implements Serializable {
      * @param quality if value in range 0..6 and supported, then appropriate profile with all settings will be set and
      *                other args will be ignored; if fails or not supported or -1 then single settigns will be applied
      */
-    public boolean setQuality(int cameraId, VIDEO_QUALITY quality) {
-        if (quality != null && (CamcorderProfile.hasProfile(cameraId, quality.getValue()) || quality == VIDEO_QUALITY.DEFAULT)) {
+    public boolean setQuality(int cameraId, VideoQuality quality) {
+        if (quality != null && (CamcorderProfile.hasProfile(cameraId, quality.getValue()) || quality == VideoQuality.DEFAULT)) {
             this.quality = quality;
             return true;
         } else {
@@ -105,25 +105,25 @@ public class VideoSettings implements Serializable {
     }
 
     @Expose
-    VIDEO_ENCODER videoEncoder = VIDEO_ENCODER.DEFAULT;
+    VideoEncoder videoEncoder = VideoEncoder.DEFAULT;
 
-    public VIDEO_ENCODER getVideoEncoder() {
+    public VideoEncoder getVideoEncoder() {
         return videoEncoder;
     }
 
-    public void setVideoEncoder(VIDEO_ENCODER videoEncoder) {
+    public void setVideoEncoder(VideoEncoder videoEncoder) {
         if (videoEncoder != null)
             this.videoEncoder = videoEncoder;
     }
 
     @Expose
-    AUDIO_ENCODER audioEncoder = AUDIO_ENCODER.DEFAULT;
+    AudioEncoder audioEncoder = AudioEncoder.DEFAULT;
 
-    public AUDIO_ENCODER getAudioEncoder() {
+    public AudioEncoder getAudioEncoder() {
         return audioEncoder;
     }
 
-    public void setAudioEncoder(AUDIO_ENCODER audioEncoder) {
+    public void setAudioEncoder(AudioEncoder audioEncoder) {
         if (audioEncoder != null)
             this.audioEncoder = audioEncoder;
     }
@@ -205,35 +205,35 @@ public class VideoSettings implements Serializable {
     }
 
     @Expose
-    FLASH_MODE flashMode = FLASH_MODE.AUTO;
+    FlashMode flashMode = FlashMode.AUTO;
 
-    public FLASH_MODE getFlashMode() {
+    public FlashMode getFlashMode() {
         return flashMode;
     }
 
-    public void setFlashMode(FLASH_MODE flashMode) {
+    public void setFlashMode(FlashMode flashMode) {
         this.flashMode = flashMode;
     }
 
     @Expose
-    FOCUS_MODE focusMode = FOCUS_MODE.AUTO;
+    FocusMode focusMode = FocusMode.AUTO;
 
-    public FOCUS_MODE getFocusMode() {
+    public FocusMode getFocusMode() {
         return focusMode;
     }
 
-    public void setFocusMode(FOCUS_MODE focusMode) {
+    public void setFocusMode(FocusMode focusMode) {
         this.focusMode = focusMode;
     }
 
     @Expose
-    COLOR_EFFECT colorEffect = COLOR_EFFECT.NONE;
+    ColorEffect colorEffect = ColorEffect.NONE;
 
-    public COLOR_EFFECT getColorEffect() {
+    public ColorEffect getColorEffect() {
         return colorEffect;
     }
 
-    public void setColorEffect(COLOR_EFFECT effect) {
+    public void setColorEffect(ColorEffect effect) {
         this.colorEffect = effect;
     }
 

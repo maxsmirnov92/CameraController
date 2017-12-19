@@ -1,8 +1,8 @@
-package ru.altarix.cameracontroller.settings;
+package net.maxsmr.cameracontroller.camera.settings;
 
 import java.lang.reflect.Field;
 
-public enum FLASH_MODE{
+public enum FlashMode {
 
 	OFF(0, "FLASH_MODE_OFF"),
 
@@ -14,7 +14,7 @@ public enum FLASH_MODE{
 
 	AUTO(4, "FLASH_MODE_AUTO");
 
-	FLASH_MODE(int id, String constValue) {
+	FlashMode(int id, String constValue) {
 		this.id = id;
 		this.constantValue = constValue;
 	}
@@ -63,19 +63,19 @@ public enum FLASH_MODE{
 		return null;
 	}
 
-	public static FLASH_MODE fromNativeValue(String value) throws IllegalArgumentException {
+	public static FlashMode fromValue(String value) throws IllegalArgumentException {
 
 		if (value == null) {
 			return null;
 		}
 
-		for (FLASH_MODE flashMode : FLASH_MODE.values()) {
+		for (FlashMode flashMode : FlashMode.values()) {
 			if (flashMode.getValue() != null && flashMode.getValue().equals(value)) {
 				return flashMode;
 			}
 		}
 
-		throw new IllegalArgumentException("Incorrect native value for enum type " + FLASH_MODE.class.getName() + ": " + value);
+		throw new IllegalArgumentException("Incorrect native value for enum type " + FlashMode.class.getName() + ": " + value);
 	}
 
 }

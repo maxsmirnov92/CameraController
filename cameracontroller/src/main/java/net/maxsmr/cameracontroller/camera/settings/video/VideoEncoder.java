@@ -1,33 +1,23 @@
-package ru.altarix.cameracontroller.settings.video;
+package net.maxsmr.cameracontroller.camera.settings.video;
 
 import java.lang.reflect.Field;
 
-public enum VIDEO_QUALITY {
+public enum VideoEncoder {
 
-	DEFAULT(-1, null),
+	DEFAULT(0, "DEFAULT"),
 
-	HIGH(0, "QUALITY_HIGH"),
+	H263(1, "H263"),
 
-	LOW(2, "QUALITY_LOW"),
+	H264(2, "H264"),
 
-	_1080P(3, "QUALITY_1080P"),
+	MPEG_4_SP(3, "MPEG_4_SP");
 
-	_720P(4, "QUALITY_720P"),
-
-	_480P(5, "QUALITY_480P"),
-
-	CIF(6, "QUALITY_CIF"),
-
-	QCIF(7, "QUALITY_QCIF"),
-
-	QVGA(8, "QUALITY_QVGA");
-
-	VIDEO_QUALITY(int id, String constValue) {
+	VideoEncoder(int id, String constValue) {
 		this.id = id;
 		this.constantValue = constValue;
 	}
 
-	private static final String constantClassName = "android.media.CamcorderProfile";
+	private static final String constantClassName = "android.media.MediaRecorder$VideoEncoder";
 	private final String constantValue;
 	private final int id;
 
@@ -44,10 +34,6 @@ public enum VIDEO_QUALITY {
 	}
 
 	public int getValue() {
-
-		if (constantValue == null) {
-			return id;
-		}
 
 		try {
 			loadClass();
@@ -73,13 +59,14 @@ public enum VIDEO_QUALITY {
 		return -1;
 	}
 
-	public static VIDEO_QUALITY fromNativeValue(int value) throws IllegalArgumentException {
+	public static VideoEncoder fromValue(int value) throws IllegalArgumentException {
 
-		for (VIDEO_QUALITY quality : VIDEO_QUALITY.values()) {
-			if (quality.getValue() == value) {
-				return quality;
+		for (VideoEncoder videoEncoder : VideoEncoder.values()) {
+			if (videoEncoder.getValue() == value) {
+				return videoEncoder;
 			}
 		}
-		throw new IllegalArgumentException("Incorrect native value for enum type " + VIDEO_QUALITY.class.getName() + ": " + value);
+
+		throw new IllegalArgumentException("Incorrect native value for enum type " + VideoEncoder.class.getName() + ": " + value);
 	}
 }

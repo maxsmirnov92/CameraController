@@ -3,9 +3,10 @@
 buildscript {
     repositories {
         jcenter()
+        google()
     }
     dependencies {
-        classpath 'com.android.tools.build:gradle:2.0.0'
+        classpath 'com.android.tools.build:gradle:3.0.1'
 
         // NOTE: Do not place your application dependencies here; they belong
         // in the individual module build.gradle files
@@ -15,19 +16,24 @@ buildscript {
 allprojects {
     repositories {
         jcenter()
+        mavenCentral()
         maven { url 'https://dl.bintray.com/maxsmirnov92/maven' }
+        google()
     }
 }
 
-def version = "1.0"
+ext {
+    sdkVersion = 27
+    minSdkVersion_ = 14
+    buildToolsVersion_ = "27.0.2"
+    appCompatVersion = buildToolsVersion_
+
+    taskUtilsVersion = "1.0.2.7"
+
+    groupIdName = "net.maxsmr"
+    cameraControllerVersion = "1.1"
+}
 
 task clean(type: Delete) {
     delete rootProject.buildDir
-}
-
-task generateBintrayJson {
-    def template = new File("bintray_template.json").text
-    File configFileText = new File("bintray.json")
-    configFileText.createNewFile()
-    configFileText.write(template.replace('[version]', version))
 }

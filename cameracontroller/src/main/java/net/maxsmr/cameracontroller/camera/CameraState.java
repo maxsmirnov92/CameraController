@@ -1,6 +1,6 @@
-package ru.altarix.cameracontroller;
+package net.maxsmr.cameracontroller.camera;
 
-public enum CAMERA_STATE {
+public enum CameraState {
     IDLE {
         @Override
         public int getValue() {
@@ -27,15 +27,15 @@ public enum CAMERA_STATE {
     }
 
     public static int getCount() {
-        return CAMERA_STATE.values().length;
+        return CameraState.values().length;
     }
 
-    public static CAMERA_STATE fromNativeValue(int value) {
-        for (CAMERA_STATE e : CAMERA_STATE.values()) {
+    public static CameraState fromValue(int value) {
+        for (CameraState e : CameraState.values()) {
             if (e.getValue() == value)
                 return e;
         }
         throw new IllegalArgumentException("Incorrect native value " + String.valueOf(value) + " for enum type "
-                + CAMERA_STATE.class.getName());
+                + CameraState.class.getName());
     }
 }

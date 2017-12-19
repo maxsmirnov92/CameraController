@@ -1,8 +1,8 @@
-package ru.altarix.cameracontroller.settings;
+package net.maxsmr.cameracontroller.camera.settings;
 
 import java.lang.reflect.Field;
 
-public enum COLOR_EFFECT {
+public enum ColorEffect {
 
 	NONE(0, "EFFECT_NONE"),
 
@@ -18,7 +18,7 @@ public enum COLOR_EFFECT {
 
 	WHITEBOARD(6, "EFFECT_WHITEBOARD");
 
-	COLOR_EFFECT(int id, String constValue) {
+	ColorEffect(int id, String constValue) {
 		this.id = id;
 		this.constantValue = constValue;
 	}
@@ -67,19 +67,19 @@ public enum COLOR_EFFECT {
 		return null;
 	}
 
-	public static COLOR_EFFECT fromNativeValue(String value) throws IllegalArgumentException {
+	public static ColorEffect fromValue(String value) throws IllegalArgumentException {
 
 		if (value == null) {
 			return null;
 		}
 
-		for (COLOR_EFFECT colorEffect : COLOR_EFFECT.values()) {
+		for (ColorEffect colorEffect : ColorEffect.values()) {
 			if (colorEffect.getValue() != null && colorEffect.getValue().equals(value)) {
 				return colorEffect;
 			}
 		}
 
-		throw new IllegalArgumentException("Incorrect native value for enum type " + COLOR_EFFECT.class.getName() + ": " + value);
+		throw new IllegalArgumentException("Incorrect native value for enum type " + ColorEffect.class.getName() + ": " + value);
 	}
 
 }

@@ -1,6 +1,6 @@
-package ru.altarix.cameracontroller.settings.video;
+package net.maxsmr.cameracontroller.camera.settings.video;
 
-public enum RECORD_LIMIT_WHAT {
+public enum RecordLimitWhat {
 
     NONE(-1),
 
@@ -10,7 +10,7 @@ public enum RECORD_LIMIT_WHAT {
 
     private final int value;
 
-    RECORD_LIMIT_WHAT(int value) {
+    RecordLimitWhat(int value) {
         this.value = value;
     }
 
@@ -22,7 +22,7 @@ public enum RECORD_LIMIT_WHAT {
         return value;
     }
 
-    public static RECORD_LIMIT_WHAT fromNativeValue(int value) throws IllegalArgumentException {
+    public static RecordLimitWhat fromValue(int value) throws IllegalArgumentException {
 
         switch (value) {
             case -1:
@@ -32,7 +32,7 @@ public enum RECORD_LIMIT_WHAT {
             case 1:
                 return SIZE;
             default:
-                throw new IllegalArgumentException("Incorrect native value for enum type " + RECORD_LIMIT_WHAT.class.getName() + ": " + value);
+                throw new IllegalArgumentException("Incorrect native value for enum type " + RecordLimitWhat.class.getName() + ": " + value);
         }
     }
 

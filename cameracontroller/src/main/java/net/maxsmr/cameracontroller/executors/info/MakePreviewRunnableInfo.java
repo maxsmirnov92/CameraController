@@ -1,11 +1,11 @@
-package ru.altarix.cameracontroller.executors.info;
+package net.maxsmr.cameracontroller.executors.info;
 
-import net.maxsmr.tasksutils.taskrunnable.RunnableInfo;
+import net.maxsmr.tasksutils.taskexecutor.RunnableInfo;
 
 import java.io.File;
 import java.io.Serializable;
 
-import ru.altarix.cameracontroller.settings.video.record.VideoSettings;
+import net.maxsmr.cameracontroller.camera.settings.video.record.VideoSettings;
 
 
 public class MakePreviewRunnableInfo extends RunnableInfo implements Serializable {

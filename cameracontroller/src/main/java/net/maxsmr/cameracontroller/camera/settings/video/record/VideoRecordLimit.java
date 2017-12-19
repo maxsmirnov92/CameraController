@@ -1,12 +1,12 @@
-package ru.altarix.cameracontroller.settings.video.record;
+package net.maxsmr.cameracontroller.camera.settings.video.record;
 
-import ru.altarix.cameracontroller.settings.video.RECORD_LIMIT_WHAT;
+import net.maxsmr.cameracontroller.camera.settings.video.RecordLimitWhat;
 
 public class VideoRecordLimit {
 
-	private final RECORD_LIMIT_WHAT what;
+	private final RecordLimitWhat what;
 
-	public RECORD_LIMIT_WHAT getRecordLimitWhat() {
+	public RecordLimitWhat getRecordLimitWhat() {
 		return what;
 	}
 
@@ -24,10 +24,10 @@ public class VideoRecordLimit {
 		}
 	}
 
-	public VideoRecordLimit(RECORD_LIMIT_WHAT what, long value) {
+	public VideoRecordLimit(RecordLimitWhat what, long value) {
 
 		if (what == null) {
-			what = RECORD_LIMIT_WHAT.NONE;
+			what = RecordLimitWhat.NONE;
 		}
 
 		this.what = what;

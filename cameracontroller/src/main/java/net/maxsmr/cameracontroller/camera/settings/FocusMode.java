@@ -1,8 +1,8 @@
-package ru.altarix.cameracontroller.settings;
+package net.maxsmr.cameracontroller.camera.settings;
 
 import java.lang.reflect.Field;
 
-public enum FOCUS_MODE {
+public enum FocusMode {
 
     AUTO(0, "FOCUS_MODE_AUTO"),
 
@@ -18,7 +18,7 @@ public enum FOCUS_MODE {
 
     MACRO(4, "FOCUS_MODE_MACRO");
 
-    FOCUS_MODE(int id, String constValue) {
+    FocusMode(int id, String constValue) {
         this.id = id;
         this.constantValue = constValue;
     }
@@ -67,19 +67,19 @@ public enum FOCUS_MODE {
         return null;
     }
 
-    public static FOCUS_MODE fromNativeValue(String value) throws IllegalArgumentException {
+    public static FocusMode fromValue(String value) throws IllegalArgumentException {
 
         if (value == null) {
             return null;
         }
 
-        for (FOCUS_MODE focusMode : FOCUS_MODE.values()) {
+        for (FocusMode focusMode : FocusMode.values()) {
             if (focusMode.getValue() != null && focusMode.getValue().equals(value)) {
                 return focusMode;
             }
         }
 
-        throw new IllegalArgumentException("Incorrect native value for enum type " + FOCUS_MODE.class.getName() + ": " + value);
+        throw new IllegalArgumentException("Incorrect native value for enum type " + FocusMode.class.getName() + ": " + value);
     }
 
 }

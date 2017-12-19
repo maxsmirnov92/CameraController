@@ -1,8 +1,8 @@
-package ru.altarix.cameracontroller.settings.photo;
+package net.maxsmr.cameracontroller.camera.settings.photo;
 
 import java.lang.reflect.Field;
 
-public enum IMAGE_FORMAT {
+public enum ImageFormat {
 
 	JPEG(0, "JPEG"),
 
@@ -16,7 +16,7 @@ public enum IMAGE_FORMAT {
 
 	YV12(5, "YV12");
 
-	IMAGE_FORMAT(int id, String constValue) {
+	ImageFormat(int id, String constValue) {
 		this.id = id;
 		this.constantValue = constValue;
 	}
@@ -63,23 +63,23 @@ public enum IMAGE_FORMAT {
 		return -1;
 	}
 
-	public static IMAGE_FORMAT fromNativeValue(int value) throws IllegalArgumentException {
+	public static ImageFormat fromValue(int value) throws IllegalArgumentException {
 
-		for (IMAGE_FORMAT imageFormat : IMAGE_FORMAT.values()) {
+		for (ImageFormat imageFormat : ImageFormat.values()) {
 			if (imageFormat.getValue() == value) {
 				return imageFormat;
 			}
 		}
 
-		throw new IllegalArgumentException("Incorrect native value for enum type " + IMAGE_FORMAT.class.getName() + ": " + value);
+		throw new IllegalArgumentException("Incorrect native value for enum type " + ImageFormat.class.getName() + ": " + value);
 	}
 
 	public boolean isPreviewFormat() {
-		return (this == IMAGE_FORMAT.NV21 || this == IMAGE_FORMAT.NV16 || this == IMAGE_FORMAT.YUY2 || this == IMAGE_FORMAT.YV12);
+		return (this == ImageFormat.NV21 || this == ImageFormat.NV16 || this == ImageFormat.YUY2 || this == ImageFormat.YV12);
 	}
 
 	public boolean isPictureFormat() {
-		return (this == IMAGE_FORMAT.JPEG || this == IMAGE_FORMAT.NV16 || this == IMAGE_FORMAT.NV21 || this == IMAGE_FORMAT.RGB_565
-				|| this == IMAGE_FORMAT.YUY2 || this == IMAGE_FORMAT.YV12);
+		return (this == ImageFormat.JPEG || this == ImageFormat.NV16 || this == ImageFormat.NV21 || this == ImageFormat.RGB_565
+				|| this == ImageFormat.YUY2 || this == ImageFormat.YV12);
 	}
 }

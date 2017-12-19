@@ -1,1 +1,3 @@
-include ':testapp', 'cameracontroller'
+include 'cameracontroller'
+//':testapp'
+//'cameracontroller'
