@@ -29,9 +29,6 @@ ext {
     appCompatVersion = buildToolsVersion_
 
     taskUtilsVersion = "1.0.2.7"
-
-    groupIdName = "net.maxsmr"
-    cameraControllerVersion = "1.1"
 }
 
 task clean(type: Delete) {

@@ -15,8 +15,8 @@ public class MakePreviewRunnableInfo extends RunnableInfo implements Serializabl
 	public final VideoSettings videoSettings;
 	public final File videoFile;
 
-	public MakePreviewRunnableInfo(String name, VideoSettings videoSettings, File videoFile) {
-		super((int) serialVersionUID, name);
+	public MakePreviewRunnableInfo(int id, String name, VideoSettings videoSettings, File videoFile) {
+		super(id, name);
 
 		this.videoSettings = videoSettings;
 		this.videoFile = videoFile;

@@ -67,8 +67,9 @@ public class FrameCalculator implements IPreviewFrameCallback {
 
     private Logger mFrameLogger;
 
-    public FrameCalculator() {
+    public FrameCalculator(Logger logger) {
         mNotifyHandler = new Handler(Looper.getMainLooper());
+        setFrameLogger(logger);
     }
 
     @NonNull
@@ -256,9 +257,11 @@ public class FrameCalculator implements IPreviewFrameCallback {
                 mStartIntervalTime = 0;
 
                 mLastStats = new FrameStats(mStartPreviewTime, mLastFps, mLastAverageFrameTimeDuringInterval / 1000000, getAverageFpsMethod1(), getAverageFrameTime());
-                mFrameLogger.debug("current frame time: " + mLastStats.lastAverageFrameTime +
-                        " ms / overall average frame time: " + mLastStats.overallAverageFrameTime + " ms");
-                mFrameLogger.debug("current fps: " + mLastStats.lastFps + " / overall average fps: " + mLastStats.overallAverageFps);
+                if (mFrameLogger != null) {
+                    mFrameLogger.debug("current frame time: " + mLastStats.lastAverageFrameTime +
+                            " ms / overall average frame time: " + mLastStats.overallAverageFrameTime + " ms");
+                    mFrameLogger.debug("current fps: " + mLastStats.lastFps + " / overall average fps: " + mLastStats.overallAverageFps);
+                }
             }
 
             if (mLastStats != null) {

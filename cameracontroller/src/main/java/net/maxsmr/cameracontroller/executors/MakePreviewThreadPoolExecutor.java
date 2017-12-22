@@ -3,7 +3,7 @@ package net.maxsmr.cameracontroller.executors;
 import net.maxsmr.cameracontroller.logger.base.Logger;
 import net.maxsmr.commonutils.data.FileHelper;
 import net.maxsmr.tasksutils.taskexecutor.AbsTaskRunnableExecutor;
-import net.maxsmr.tasksutils.taskexecutor.TaskRunnable;
+
 
 import java.io.File;
 import java.util.Arrays;
@@ -12,18 +12,21 @@ import java.util.concurrent.TimeUnit;
 
 import net.maxsmr.cameracontroller.camera.CameraController;
 import net.maxsmr.cameracontroller.executors.info.MakePreviewRunnableInfo;
+import net.maxsmr.tasksutils.taskexecutor.TaskRunnable;
 
+// TODO при инициализации передавать AbstractRunnableStorage
 public class MakePreviewThreadPoolExecutor extends AbsTaskRunnableExecutor {
 
     private final static int KEEP_ALIVE_TIME = 60;
 
     private final Logger logger;
 
-    private final CameraController cameraController = CameraController.getInstance();
+    private final CameraController cameraController;
 
-    public MakePreviewThreadPoolExecutor(int poolSize, boolean syncQueue, String queueDirPath, Logger logger) {
+    public MakePreviewThreadPoolExecutor(CameraController cameraController, int poolSize, boolean syncQueue, String queueDirPath, Logger logger) {
         super(poolSize, poolSize, KEEP_ALIVE_TIME, TimeUnit.SECONDS, "MakePreviewThread", syncQueue, queueDirPath);
         this.logger = logger;
+        this.cameraController = cameraController;
         this.logger.debug("MakePreviewThreadPoolExecutor(), poolSize=" + poolSize + ", syncQueue=" + syncQueue + ", queueDirPath="
                 + queueDirPath);
     }
