@@ -23,7 +23,6 @@ public enum RecordLimitWhat {
     }
 
     public static RecordLimitWhat fromValue(int value) throws IllegalArgumentException {
-
         switch (value) {
             case -1:
                 return NONE;
@@ -32,7 +31,7 @@ public enum RecordLimitWhat {
             case 1:
                 return SIZE;
             default:
-                throw new IllegalArgumentException("Incorrect native value for enum type " + RecordLimitWhat.class.getName() + ": " + value);
+                throw new IllegalArgumentException("Incorrect value for enum type " + RecordLimitWhat.class.getName() + ": " + value);
         }
     }
 

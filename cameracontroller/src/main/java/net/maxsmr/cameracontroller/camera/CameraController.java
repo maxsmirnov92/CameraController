@@ -20,7 +20,6 @@ import android.media.MediaRecorder.OnErrorListener;
 import android.media.MediaRecorder.OnInfoListener;
 import android.net.Uri;
 import android.os.Build;
-import android.os.Looper;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.text.TextUtils;
@@ -37,6 +36,7 @@ import net.maxsmr.cameracontroller.frame.FrameCalculator;
 import net.maxsmr.cameracontroller.frame.stats.IFrameStatsListener;
 import net.maxsmr.cameracontroller.logger.base.Logger;
 import net.maxsmr.commonutils.android.media.MetadataRetriever;
+import net.maxsmr.commonutils.data.CompareUtils;
 import net.maxsmr.commonutils.data.FileHelper;
 import net.maxsmr.commonutils.data.Observable;
 import net.maxsmr.commonutils.graphic.GraphicUtils;
@@ -55,7 +55,6 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 
 import net.maxsmr.cameracontroller.executors.MakePreviewThreadPoolExecutor;
@@ -64,12 +63,15 @@ import net.maxsmr.cameracontroller.camera.settings.ColorEffect;
 import net.maxsmr.cameracontroller.camera.settings.FlashMode;
 import net.maxsmr.cameracontroller.camera.settings.FocusMode;
 import net.maxsmr.cameracontroller.camera.settings.photo.ImageFormat;
-import net.maxsmr.cameracontroller.camera.settings.photo.PhotoSettings;
+import net.maxsmr.cameracontroller.camera.settings.photo.CameraSettings;
 import net.maxsmr.cameracontroller.camera.settings.video.AudioEncoder;
 import net.maxsmr.cameracontroller.camera.settings.video.VideoEncoder;
 import net.maxsmr.cameracontroller.camera.settings.video.VideoQuality;
 import net.maxsmr.cameracontroller.camera.settings.video.record.VideoRecordLimit;
 import net.maxsmr.cameracontroller.camera.settings.video.record.VideoSettings;
+
+import static net.maxsmr.cameracontroller.camera.settings.photo.CameraSettings.DEFAULT_IMAGE_FORMAT;
+import static net.maxsmr.cameracontroller.camera.settings.photo.CameraSettings.DEFAULT_PREVIEW_FORMAT;
 
 
 @SuppressWarnings({"deprecation"})
@@ -83,8 +85,7 @@ public class CameraController {
     public static final int CAMERA_ID_BACK = Camera.CameraInfo.CAMERA_FACING_BACK;
     public static final int CAMERA_ID_FRONT = Camera.CameraInfo.CAMERA_FACING_FRONT;
 
-    public static final int NOT_SUPPORTED_ZOOM = -1;
-    public static final int MIN_ZOOM = 0;
+    public static final boolean DEFAULT_ENABLE_STORE_LOCATION = true;
 
     private static final int MAKE_PREVIEW_POOL_SIZE = 5;
 
@@ -148,25 +149,13 @@ public class CameraController {
 
     private CameraThread cameraThread;
 
-    /**
-     * used to restore camera parameters after taking photo
-     */
-    private PhotoSettings previousPhotoSettings;
-
-    private PhotoSettings currentPhotoSettings;
-
-    /**
-     * used to restore camera parameters after recording video
-     */
-    private VideoSettings previousVideoSettings;
-
-    private VideoSettings currentVideoSettings;
-
     private boolean isMuteSoundEnabled = false;
 
     private int previousStreamVolume = -1;
 
     private Location lastLocation;
+
+    private VideoSettings currentVideoSettings;
 
     private File lastPhotoFile;
 
@@ -179,6 +168,8 @@ public class CameraController {
     private MediaRecorder mediaRecorder;
 
     private int expectedCallbackBufSize = 0;
+
+    private boolean enableStoreLocation = DEFAULT_ENABLE_STORE_LOCATION;
 
     /**
      * used for storing and running runnables to save preview for given video
@@ -260,6 +251,14 @@ public class CameraController {
         return cameraThread != null && cameraThread.isAlive();
     }
 
+    public boolean isStoreLocationEnabled() {
+        return enableStoreLocation;
+    }
+
+    public void enableStoreLocation(boolean enable) {
+        this.enableStoreLocation = enable;
+    }
+
     public static Size findLowSize(List<Size> sizeList) {
 
         if (sizeList == null || sizeList.isEmpty()) {
@@ -301,99 +300,33 @@ public class CameraController {
         return mediumSize;
     }
 
-    public PhotoSettings getCurrentPhotoSettings() {
-
-        if (camera != null) {
-
-            if (!isCameraLocked()) {
-                logger.error("can't get parameters: camera is not locked");
-                return null;
-            }
-
-            final Camera.Parameters params;
-
-            try {
-                params = camera.getParameters();
-            } catch (RuntimeException e) {
-                logger.error("a RuntimeException occurred during getParameters()");
-                return null;
-            }
-
-            try {
-                return new PhotoSettings(ImageFormat.fromValue(params
-                        .getPictureFormat()), params.getPictureSize(), params.getJpegQuality(),
-                        FlashMode.fromValue(params.getFlashMode()), FocusMode.fromValue(params.getFocusMode()),
-                        ColorEffect.fromValue(params.getColorEffect()));
-            } catch (IllegalArgumentException e) {
-                logger.error("an IllegalArgumentException occurred during fromValue(): " + e.getMessage());
-                return null;
-            }
-        }
-
-        logger.error("camera is null");
-        return null;
-    }
-
-    public boolean isPreviewSizeSupported(int width, int height) {
-
-        if (camera == null) {
-            logger.error("can't get parameters: camera is null");
-            return false;
-        }
+    @Nullable
+    public CameraSettings getCurrentCameraSettings() {
 
         if (!isCameraLocked()) {
             logger.error("can't get parameters: camera is not locked");
-            return false;
+            return null;
         }
 
-        final List<Camera.Size> supportedPreviewSizes = getSupportedPreviewSizes();
+        final Camera.Parameters params;
 
-        if (supportedPreviewSizes != null) {
-
-            if (width > 0 && height > 0) {
-
-                for (int i = 0; i < supportedPreviewSizes.size(); i++) {
-                    if (width == supportedPreviewSizes.get(i).width && height == supportedPreviewSizes.get(i).height) {
-                        return true;
-                    }
-                }
-
-            }
+        try {
+            params = camera.getParameters();
+        } catch (RuntimeException e) {
+            logger.error("a RuntimeException occurred during getParameters()");
+            return null;
         }
 
-        return false;
+        Pair<Double, Double> previewFpsRange = getCameraPreviewFpsRange();
+        return new CameraSettings(ImageFormat.fromValue(params.getPreviewFormat()), ImageFormat.fromValue(params.getPictureFormat()),
+                params.getPictureSize(), params.getJpegQuality(),
+                FlashMode.fromValue(params.getFlashMode()), FocusMode.fromValue(params.getFocusMode()), ColorEffect.fromValue(params.getColorEffect()),
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.ICE_CREAM_SANDWICH_MR1 && params.getVideoStabilization(),
+                previewFpsRange != null ? previewFpsRange.first.intValue() : 0, params.getZoom());
     }
 
-    public boolean isPictureSizeSupported(int width, int height) {
-
-        if (camera == null) {
-            logger.error("can't get parameters: camera is null");
-            return false;
-        }
-
-        if (!isCameraLocked()) {
-            logger.error("can't get parameters: camera is not locked");
-            return false;
-        }
-
-        final List<Camera.Size> supportedPictureSizes = getSupportedPictureSizes();
-
-        if (supportedPictureSizes != null) {
-
-            if (width > 0 && height > 0) {
-
-                for (int i = 0; i < supportedPictureSizes.size(); i++) {
-                    if (width == supportedPictureSizes.get(i).width && height == supportedPictureSizes.get(i).height) {
-                        return true;
-                    }
-                }
-            }
-        }
-
-        return false;
-    }
-
-    public PhotoSettings getLowPhotoSettings() {
+    @Nullable
+    public CameraSettings getLowCameraSettings() {
 
         if (camera == null) {
             logger.error("can't get parameters: camera is null");
@@ -412,23 +345,14 @@ public class CameraController {
             return null;
         }
 
-        StringBuilder picSizesStr = new StringBuilder();
-        for (Size s : supportedPictureSizes)
-            picSizesStr.append("[" + s.width + "x" + s.height + "]");
-        logger.debug("_ supported picture sizes: " + picSizesStr);
 
-        Size lowPictureSize = findLowSize(supportedPictureSizes);
-        if (lowPictureSize != null) {
-            logger.debug(" _ low picture size: " + lowPictureSize.width + "x" + lowPictureSize.height);
-        } else {
-            logger.error(" _ low picture size is null");
-        }
-
-        return new PhotoSettings(/* ImageFormat.NV21, */ImageFormat.JPEG, /* optimalPreviewSize, */lowPictureSize, 50, FlashMode.AUTO,
-                FocusMode.AUTO, ColorEffect.NONE);
+        return new CameraSettings(DEFAULT_IMAGE_FORMAT, DEFAULT_PREVIEW_FORMAT, findLowSize(supportedPictureSizes), 50,
+                FlashMode.AUTO, FocusMode.AUTO, ColorEffect.NONE,
+                CameraSettings.DEFAULT_ENABLE_VIDEO_STABILIZATION, CameraSettings.DEFAULT_PREVIEW_FRAME_RATE, CameraSettings.ZOOM_NOT_SPECIFIED);
     }
 
-    public PhotoSettings getMediumPhotoSettings() {
+    @Nullable
+    public CameraSettings getMediumCameraSettings() {
 
         if (camera == null) {
             logger.error("can't get parameters: camera is null");
@@ -447,23 +371,13 @@ public class CameraController {
             return null;
         }
 
-        StringBuilder picSizesStr = new StringBuilder();
-        for (Size s : supportedPictureSizes)
-            picSizesStr.append("[" + s.width + "x" + s.height + "]");
-        logger.debug("_ supported picture sizes: " + picSizesStr);
-
-        final Size mediumPictureSize = findMediumSize(supportedPictureSizes);
-        if (mediumPictureSize != null) {
-            logger.debug(" _ medium picture size: " + mediumPictureSize.width + "x" + mediumPictureSize.height);
-        } else {
-            logger.error(" _ medium picture size is null");
-        }
-
-        return new PhotoSettings(/* ImageFormat.NV21, */ImageFormat.JPEG, /* optimalPreviewSize, */mediumPictureSize, 85,
-                FlashMode.AUTO, FocusMode.AUTO, ColorEffect.NONE);
+        return new CameraSettings(DEFAULT_IMAGE_FORMAT, DEFAULT_PREVIEW_FORMAT, findMediumSize(supportedPictureSizes), 85,
+                FlashMode.AUTO, FocusMode.AUTO, ColorEffect.NONE,
+                CameraSettings.DEFAULT_ENABLE_VIDEO_STABILIZATION, CameraSettings.DEFAULT_PREVIEW_FRAME_RATE, CameraSettings.ZOOM_NOT_SPECIFIED);
     }
 
-    public PhotoSettings getHighPhotoSettings() {
+    @Nullable
+    public CameraSettings getHighCameraSettings() {
 
         if (camera == null) {
             logger.error("can't get parameters: camera is null");
@@ -482,20 +396,9 @@ public class CameraController {
             return null;
         }
 
-        StringBuilder picSizesStr = new StringBuilder();
-        for (Size s : supportedPictureSizes)
-            picSizesStr.append("[" + s.width + "x" + s.height + "]");
-        logger.debug("_ supported picture sizes: " + picSizesStr);
-
-        Size highPictureSize = findHighSize(supportedPictureSizes);
-        if (highPictureSize != null) {
-            logger.debug(" _ high picture size: " + highPictureSize.width + "x" + highPictureSize.height);
-        } else {
-            logger.error(" _ high picture size is null");
-        }
-
-        return new PhotoSettings(/* ImageFormat.NV21, */ImageFormat.JPEG, /* optimalPreviewSize, */highPictureSize, 100, FlashMode.AUTO,
-                FocusMode.AUTO, ColorEffect.NONE);
+        return new CameraSettings(DEFAULT_IMAGE_FORMAT, DEFAULT_PREVIEW_FORMAT, findHighSize(supportedPictureSizes), 100,
+                FlashMode.AUTO, FocusMode.AUTO, ColorEffect.NONE,
+                CameraSettings.DEFAULT_ENABLE_VIDEO_STABILIZATION, CameraSettings.DEFAULT_PREVIEW_FRAME_RATE, CameraSettings.ZOOM_NOT_SPECIFIED);
     }
 
     public SurfaceView getCameraSurfaceView() {
@@ -789,8 +692,7 @@ public class CameraController {
         this.lastLocation = loc;
     }
 
-    private boolean createCamera(int cameraId, SurfaceView surfaceView, boolean setMaxPreviewFps, boolean setRgbPreviewFormat,
-                                 boolean enableVideoStabilization) {
+    private boolean createCamera(int cameraId, SurfaceView surfaceView, CameraSettings cameraSettings) {
 
         synchronized (sync) {
 
@@ -853,16 +755,7 @@ public class CameraController {
                 return false;
             }
 
-            if (setMaxPreviewFps)
-                setCameraPreviewMaxFpsRange();
-
-            if (setRgbPreviewFormat)
-                setCameraPreviewFormat(ImageFormat.RGB_565);
-
-            if (enableVideoStabilization)
-                setCameraVideoStabilization(true);
-
-            // setCameraParameters(getMediumPhotoSettings());
+            setCameraSettings(cameraSettings);
 
             previewCallback.updatePreviewFormat(getCameraPreviewFormat());
             previewCallback.updatePreviewSize(getCameraPreviewSize());
@@ -877,7 +770,7 @@ public class CameraController {
 
             if (isSurfaceCreated()) {
 
-                logger.debug("surface has been already created before!");
+                logger.debug("surface created, setting preview...");
 
                 setCameraDisplayOrientation();
 
@@ -910,6 +803,11 @@ public class CameraController {
         }
 
         return false;
+    }
+
+    @Nullable
+    public Camera getOpenedCameraInstance() {
+        return isCameraOpened() && isCameraLocked() && isMediaRecorderRecording? camera : null;
     }
 
     public int getOpenedCameraId() {
@@ -1014,13 +912,23 @@ public class CameraController {
         }
     }
 
+    public boolean restartPreview() {
+        boolean result = true;
+        if (isPreviewStated) {
+            result = stopPreview();
+        }
+        if (result) {
+            return startPreview();
+        }
+        return result;
+    }
+
     /**
      * for the first time must be called at onCreate() or onResume() handling surfaceCreated(), surfaceChanged() and
      * surfaceDestroyed() callbacks
      */
-    public boolean openCamera(int cameraId, SurfaceView surfaceView, boolean setMaxFps, boolean setRgbPreviewFormat, boolean enableVideoStabilization) {
-        logger.debug("openCamera(), cameraId=" + cameraId + ", setMaxFps=" + setMaxFps + ", setRgbPreviewFormat=" + setRgbPreviewFormat
-                + ", enableVideoStabilization=" + enableVideoStabilization);
+    public boolean openCamera(int cameraId, SurfaceView surfaceView, CameraSettings cameraSettings) {
+        logger.debug("openCamera(), cameraId=" + cameraId + ", setMaxFps=" + cameraSettings);
 
         if (isCameraThreadRunning()) {
             logger.error("cameraThread is already running");
@@ -1033,7 +941,7 @@ public class CameraController {
 
         final CountDownLatch latch = new CountDownLatch(1);
 
-        cameraThread = new CameraThread(cameraId, surfaceView, setMaxFps, setRgbPreviewFormat, enableVideoStabilization, latch);
+        cameraThread = new CameraThread(cameraId, surfaceView, cameraSettings, latch);
         cameraThread.setName(CameraThread.class.getSimpleName());
         cameraThread.start();
 
@@ -1052,7 +960,7 @@ public class CameraController {
         }
 
         return openResult;
-        // return createCamera(cameraId, surfaceView);
+        // return createCamera(cameraId, surfaceView, cameraSettings);
     }
 
     public boolean releaseCamera() {
@@ -1132,121 +1040,6 @@ public class CameraController {
         isMuteSoundEnabled = enable;
     }
 
-    public int getMaxZoom() {
-
-        synchronized (sync) {
-
-            if (currentCameraState != CameraState.IDLE) {
-                logger.error("incorrect currentCameraState: " + currentCameraState);
-                return NOT_SUPPORTED_ZOOM;
-            }
-
-            if (camera == null) {
-                logger.error("camera is null");
-                return NOT_SUPPORTED_ZOOM;
-            }
-
-            if (!isCameraLocked()) {
-                logger.error("can't get/set parameters: camera is not locked");
-                return NOT_SUPPORTED_ZOOM;
-            }
-            final Parameters params;
-            try {
-                params = camera.getParameters();
-            } catch (RuntimeException e) {
-                logger.error("a RuntimeException occurred during getParameters()", e);
-                return NOT_SUPPORTED_ZOOM;
-            }
-
-            if (!params.isZoomSupported()) {
-                logger.error("zoom is not supported");
-                return NOT_SUPPORTED_ZOOM;
-            }
-
-            return params.getMaxZoom();
-        }
-    }
-
-    public int getCurrentZoom() {
-
-        synchronized (sync) {
-
-            if (currentCameraState != CameraState.IDLE) {
-                logger.error("incorrect currentCameraState: " + currentCameraState);
-                return NOT_SUPPORTED_ZOOM;
-            }
-
-            if (camera == null) {
-                logger.error("camera is null");
-                return NOT_SUPPORTED_ZOOM;
-            }
-
-            if (!isCameraLocked()) {
-                logger.error("can't get/set parameters: camera is not locked");
-                return NOT_SUPPORTED_ZOOM;
-            }
-            final Parameters params;
-            try {
-                params = camera.getParameters();
-            } catch (RuntimeException e) {
-                logger.error("a RuntimeException occurred during getParameters()", e);
-                return NOT_SUPPORTED_ZOOM;
-            }
-
-            if (!params.isZoomSupported()) {
-                logger.error("zoom is not supported");
-                return NOT_SUPPORTED_ZOOM;
-            }
-
-            return params.getZoom();
-        }
-    }
-
-    public boolean setCurrentZoom(int zoom) {
-
-        synchronized (sync) {
-
-            if (currentCameraState != CameraState.IDLE) {
-                logger.error("incorrect currentCameraState: " + currentCameraState);
-                return false;
-            }
-
-            if (camera == null) {
-                logger.error("camera is null");
-                return false;
-            }
-
-            if (!isCameraLocked()) {
-                logger.error("can't get/set parameters: camera is not locked");
-                return false;
-            }
-
-            final Parameters params;
-            try {
-                params = camera.getParameters();
-            } catch (RuntimeException e) {
-                logger.error("a RuntimeException occurred during getParameters()", e);
-                return false;
-            }
-
-            if (zoom < 0 || zoom > params.getMaxZoom()) {
-                logger.error("incorrect zoom level: " + zoom);
-                return false;
-            }
-
-            params.setZoom(zoom);
-
-            try {
-                camera.setParameters(params);
-            } catch (RuntimeException e) {
-                logger.error("a RuntimeException occurred during setParameters()", e);
-                return false;
-            }
-
-            return true;
-        }
-    }
-
     public List<Camera.Size> getSupportedPreviewSizes() {
         synchronized (sync) {
             try {
@@ -1260,11 +1053,11 @@ public class CameraController {
         }
     }
 
-    public List<int[]> getSupportedPreviewFpsRanges() {
+    public List<Camera.Size> getSupportedPictureSizes() {
         synchronized (sync) {
             try {
                 if (isCameraLocked()) {
-                    return camera.getParameters().getSupportedPreviewFpsRange();
+                    return camera.getParameters().getSupportedPictureSizes();
                 }
             } catch (RuntimeException e) {
                 logger.error("a RuntimeException occurred during getParameters()", e);
@@ -1299,19 +1092,6 @@ public class CameraController {
         }
     }
 
-    public List<Camera.Size> getSupportedPictureSizes() {
-        synchronized (sync) {
-            try {
-                if (isCameraLocked()) {
-                    return camera.getParameters().getSupportedPictureSizes();
-                }
-            } catch (RuntimeException e) {
-                logger.error("a RuntimeException occurred during getParameters()", e);
-            }
-            return null;
-        }
-    }
-
     public List<String> getSupportedFlashModes() {
         synchronized (sync) {
             try {
@@ -1330,6 +1110,19 @@ public class CameraController {
             try {
                 if (isCameraLocked()) {
                     return camera.getParameters().getSupportedColorEffects();
+                }
+            } catch (RuntimeException e) {
+                logger.error("a RuntimeException occurred during getParameters()", e);
+            }
+            return null;
+        }
+    }
+
+    public List<String> getSupportedFocusModes() {
+        synchronized (sync) {
+            try {
+                if (isCameraLocked()) {
+                    return camera.getParameters().getSupportedFocusModes();
                 }
             } catch (RuntimeException e) {
                 logger.error("a RuntimeException occurred during getParameters()", e);
@@ -1457,7 +1250,7 @@ public class CameraController {
                     }
                 }
             } else {
-                logger.error("no supported preview sizes for this camera");
+                logger.error("no supported preview sizes");
             }
 
             if (!isPreviewSizeSupported) {
@@ -1521,10 +1314,6 @@ public class CameraController {
 
         synchronized (sync) {
 
-            if (isMediaRecorderRecording) {
-                logger.error("can't set preview format: media recorder is recording");
-                return false;
-            }
 
             if (previewFormat == null) {
                 logger.error("previewFormat is null");
@@ -1549,26 +1338,6 @@ public class CameraController {
                 return false;
             }
 
-            boolean isPreviewFormatSupported = false;
-
-            final List<Integer> supportedPreviewFormats = params.getSupportedPreviewFormats();
-            if (supportedPreviewFormats != null && supportedPreviewFormats.size() != 0) {
-                for (int i = 0; i < supportedPreviewFormats.size(); i++) {
-                    if (previewFormat.getValue() == supportedPreviewFormats.get(i)) {
-                        isPreviewFormatSupported = true;
-                        break;
-                    }
-                }
-            } else {
-                logger.error("no supported preview formats for this camera");
-            }
-
-            if (!isPreviewFormatSupported) {
-                logger.error(" _ preview format " + previewFormat + " is NOT supported");
-            } else {
-                logger.debug(" _ preview format " + previewFormat + " is supported");
-                params.setPreviewFormat(previewFormat.getValue());
-            }
 
             try {
                 camera.setParameters(params);
@@ -1577,14 +1346,6 @@ public class CameraController {
                 return false;
             }
 
-            previewCallback.updatePreviewFormat(previewFormat);
-
-            if (isPreviewStated) {
-                // restart preview and reset callback
-                stopPreview();
-                startPreview();
-                setPreviewCallback();
-            }
 
             return true;
         }
@@ -1593,7 +1354,7 @@ public class CameraController {
     /**
      * @return range the minimum and maximum preview fps
      */
-    public double[] getCameraPreviewFpsRange() {
+    public Pair<Double, Double> getCameraPreviewFpsRange() {
 
         synchronized (sync) {
 
@@ -1618,436 +1379,7 @@ public class CameraController {
 
             int[] scaledRange = new int[2];
             params.getPreviewFpsRange(scaledRange);
-            double[] normalRange = new double[]{scaledRange[0] / 1000, scaledRange[1] / 1000};
-            return normalRange;
-        }
-    }
-
-    /**
-     * @param minFps required minimum preview frame rate
-     * @param maxFps required maximum preview frame rate
-     */
-    private boolean setCameraPreviewFpsRange(double minFps, double maxFps) {
-        logger.debug("setCameraPreviewFpsRange(), minFps=" + minFps + ", maxFps=" + maxFps);
-
-        synchronized (sync) {
-
-            if (minFps == 0 || maxFps == 0 || minFps > maxFps) {
-                logger.error("incorrect fps range: " + minFps + " .. " + maxFps);
-                return false;
-            }
-
-            if (camera == null) {
-                logger.error("camera is null");
-                return false;
-            }
-
-            if (!isCameraLocked()) {
-                logger.error("can't get/set parameters: camera is not locked");
-                return false;
-            }
-
-            final Parameters params;
-            try {
-                params = camera.getParameters();
-            } catch (RuntimeException e) {
-                logger.error("a RuntimeException occurred during getParameters()", e);
-                return false;
-            }
-
-            final int minFpsScaled = (int) (minFps * 1000);
-            final int maxFpsScaled = (int) (maxFps * 1000);
-
-            boolean isPreviewFpsRangeSupported = false;
-
-            final List<int[]> supportedPreviewFpsRanges = params.getSupportedPreviewFpsRange();
-
-            if (supportedPreviewFpsRanges == null || supportedPreviewFpsRanges.isEmpty()) {
-                logger.error("no supported preview fps ranges for this camera");
-                return false;
-            }
-
-            for (int i = 0; i < supportedPreviewFpsRanges.size(); i++) {
-
-                final int supportedMinFpsScaled = supportedPreviewFpsRanges.get(i)[Parameters.PREVIEW_FPS_MIN_INDEX];
-                final int supportedMaxFpsScaled = supportedPreviewFpsRanges.get(i)[Parameters.PREVIEW_FPS_MAX_INDEX];
-
-                if (minFpsScaled >= supportedMinFpsScaled && minFpsScaled <= supportedMaxFpsScaled && maxFpsScaled >= supportedMinFpsScaled
-                        && maxFpsScaled <= supportedMaxFpsScaled) {
-                    isPreviewFpsRangeSupported = true;
-                    break;
-                }
-            }
-
-            if (!isPreviewFpsRangeSupported) {
-                logger.error(" _ FPS range " + minFps + " .. " + maxFps + " is NOT supported");
-                return false;
-            } else {
-                logger.debug(" _ FPS range " + minFps + " .. " + maxFps + " is supported");
-                params.setPreviewFpsRange(minFpsScaled, maxFpsScaled);
-            }
-
-            try {
-                camera.setParameters(params);
-            } catch (RuntimeException e) {
-                logger.error("a RuntimeException occurred during setParameters()", e);
-                return false;
-            }
-
-            if (isPreviewStated) {
-                // restart preview and reset callback
-                stopPreview();
-                startPreview();
-                setPreviewCallback();
-            }
-
-            return true;
-        }
-    }
-
-    private boolean setCameraPreviewMaxFpsRange() {
-
-        List<int[]> supportedPreviewFpsRanges = getSupportedPreviewFpsRanges();
-
-        if (supportedPreviewFpsRanges != null && !supportedPreviewFpsRanges.isEmpty()) {
-            int[] maxFpsRange = supportedPreviewFpsRanges.get(supportedPreviewFpsRanges.size() - 1);
-            return setCameraPreviewFpsRange(maxFpsRange[Camera.Parameters.PREVIEW_FPS_MIN_INDEX] / 1000,
-                    maxFpsRange[Camera.Parameters.PREVIEW_FPS_MAX_INDEX] / 1000);
-        } else {
-            logger.error("supportedPreviewFpsRanges is null or empty");
-            return false;
-        }
-    }
-
-    public boolean setCameraVideoStabilization(boolean toggle) {
-        logger.debug("setCameraVideoStabilization(), toggle=" + toggle);
-
-        synchronized (sync) {
-
-            if (camera == null) {
-                logger.error("camera is null");
-                return false;
-            }
-
-            if (!isCameraLocked()) {
-                logger.error("can't get/set parameters: camera is not locked");
-                return false;
-            }
-
-            final Parameters params;
-            try {
-                params = camera.getParameters();
-            } catch (RuntimeException e) {
-                logger.error("a RuntimeException occurred during getParameters()", e);
-                return false;
-            }
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.ICE_CREAM_SANDWICH_MR1) {
-                if (!params.isVideoStabilizationSupported()) {
-                    logger.error(" _ video stabilization is NOT supported");
-                    return false;
-                } else {
-                    logger.debug(" _ video stabilization is supported");
-                    params.setVideoStabilization(toggle);
-                }
-            }
-
-            try {
-                camera.setParameters(params);
-            } catch (RuntimeException e) {
-                logger.error("a RuntimeException occurred during setParameters()", e);
-                return false;
-            }
-
-            return true;
-        }
-    }
-
-    public FlashMode getCameraFlashMode() {
-
-        synchronized (sync) {
-
-            if (camera == null) {
-                logger.error("camera is null");
-                return null;
-            }
-
-            if (!isCameraLocked()) {
-                logger.error("can't get parameters: camera is not locked");
-                return null;
-            }
-
-            final Parameters params;
-
-            try {
-                params = camera.getParameters();
-            } catch (RuntimeException e) {
-                logger.error("a RuntimeException occurred during getParameters()", e);
-                return null;
-            }
-
-            return FlashMode.fromValue(params.getFlashMode());
-        }
-    }
-
-    /**
-     * used to change permanent or temp flash mode for opened camera; working both for photo and video
-     */
-    public boolean setCameraFlashMode(FlashMode flashMode) {
-        logger.debug("setCameraFlashMode(), flashMode=" + flashMode);
-
-        synchronized (sync) {
-
-            if (flashMode == null) {
-                logger.error("flash mode is null");
-                return false;
-            }
-
-            if (camera == null) {
-                logger.error("camera is null");
-                return false;
-            }
-
-            if (!isCameraLocked()) {
-                logger.error("can't get/set parameters: camera is not locked");
-                return false;
-            }
-
-            final Parameters params;
-            try {
-                params = camera.getParameters();
-            } catch (RuntimeException e) {
-                logger.error("a RuntimeException occurred during getParameters()", e);
-                return false;
-            }
-
-            boolean isFlashModeSupported = false;
-
-            final List<String> supportedFlashModes = params.getSupportedFlashModes();
-
-            if (supportedFlashModes != null && supportedFlashModes.size() != 0) {
-                for (int i = 0; i < supportedFlashModes.size(); i++) {
-                    if (flashMode.getValue().equals(supportedFlashModes.get(i))) {
-                        isFlashModeSupported = true;
-                        break;
-                    }
-                }
-            } else {
-                logger.error("no supported flash modes for this camera");
-            }
-
-            if (!isFlashModeSupported) {
-                logger.error(" _ flash mode " + flashMode.getValue() + " is NOT supported");
-                return false;
-            } else {
-                logger.debug(" _ flash mode " + flashMode.getValue() + " is supported");
-                params.setFlashMode(flashMode.getValue());
-            }
-
-            try {
-                camera.setParameters(params);
-            } catch (RuntimeException e) {
-                logger.error("a RuntimeException occurred during setParameters()", e);
-                return false;
-            }
-
-            return true;
-        }
-    }
-
-    public FocusMode getCameraFocusMode() {
-
-        synchronized (sync) {
-            if (camera == null) {
-                logger.error("camera is null");
-                return null;
-            }
-
-            if (!isCameraLocked()) {
-                logger.error("can't get parameters: camera is not locked");
-                return null;
-            }
-
-            final Parameters params;
-
-            try {
-                params = camera.getParameters();
-            } catch (RuntimeException e) {
-                logger.error("a RuntimeException occurred during getParameters()", e);
-                return null;
-            }
-
-            return FocusMode.fromValue(params.getFocusMode());
-        }
-    }
-
-    /**
-     * used to change permanent or temp focus mode for opened camera; working both for photo and video
-     */
-    public boolean setCameraFocus(FocusMode focusMode) {
-        logger.debug("setCameraFocus(), focusMode=" + focusMode);
-
-        synchronized (sync) {
-
-            if (focusMode == null) {
-                logger.error("focus mode is null");
-                return false;
-            }
-
-            if (camera == null) {
-                logger.error("camera is null");
-                return false;
-            }
-
-            if (!isCameraLocked()) {
-                logger.error("can't get/set parameters: camera is not locked");
-                return false;
-            }
-
-            final Parameters params;
-            try {
-                params = camera.getParameters();
-            } catch (RuntimeException e) {
-                logger.error("a RuntimeException occurred during getParameters()", e);
-                return false;
-            }
-
-            boolean isFocusModeSupported = false;
-
-            final List<String> supportedFocusModes = params.getSupportedFocusModes();
-
-            if (supportedFocusModes != null && supportedFocusModes.size() > 0) {
-                for (String supportedFocusMode : supportedFocusModes) {
-
-                    if (supportedFocusMode.equals(focusMode.getValue())) {
-                        isFocusModeSupported = true;
-                    }
-                }
-            } else {
-                logger.error("no supported focus modes for this camera");
-            }
-
-            if (!isFocusModeSupported) {
-                logger.error(" _ focus mode " + focusMode.getValue() + " is NOT supported");
-            } else {
-                logger.debug(" _ focus mode " + focusMode.getValue() + " is supported");
-                params.setFocusMode(focusMode.getValue());
-            }
-
-            camera.cancelAutoFocus();
-
-            boolean isFocusAreasSupported = false;
-            boolean isMeteringAreasSupported = false;
-
-            if (Build.VERSION.SDK_INT > Build.VERSION_CODES.ICE_CREAM_SANDWICH) {
-                isFocusAreasSupported = params.getMaxNumFocusAreas() > 0;
-                isMeteringAreasSupported = params.getMaxNumMeteringAreas() > 0;
-            }
-
-            if (isFocusModeSupported || isFocusAreasSupported || isMeteringAreasSupported) {
-
-                try {
-                    camera.setParameters(params);
-                } catch (RuntimeException e) {
-                    logger.error("a RuntimeException occurred during setParameters()", e);
-                    return false;
-                }
-
-                return true;
-            }
-
-            return false;
-        }
-    }
-
-    public ColorEffect getCameraColorEffect() {
-
-        synchronized (sync) {
-
-            if (camera == null) {
-                logger.error("camera is null");
-                return null;
-            }
-
-            if (!isCameraLocked()) {
-                logger.error("can't get parameters: camera is not locked");
-                return null;
-            }
-
-            final Parameters params;
-
-            try {
-                params = camera.getParameters();
-            } catch (RuntimeException e) {
-                logger.error("a RuntimeException occurred during getParameters()", e);
-                return null;
-            }
-
-            return ColorEffect.fromValue(params.getColorEffect());
-        }
-    }
-
-    /**
-     * used to change permanent or temp color effect for opened camera; working both for photo and video
-     */
-    public boolean setCameraColorEffect(ColorEffect effect) {
-        logger.debug("setCameraColorEffect(), effect=" + effect);
-
-        synchronized (sync) {
-
-            if (effect == null) {
-                logger.error("color effect is null");
-                return false;
-            }
-
-            if (camera == null) {
-                logger.error("camera is null");
-                return false;
-            }
-
-            if (!isCameraLocked()) {
-                logger.error("can't get/set parameters: camera is not locked");
-                return false;
-            }
-
-            final Parameters params;
-            try {
-                params = camera.getParameters();
-            } catch (RuntimeException e) {
-                logger.error("a RuntimeException occurred during getParameters()", e);
-                return false;
-            }
-
-            boolean isColorEffectSupported = false;
-
-            final List<String> supportedColorEffects = params.getSupportedColorEffects();
-
-            if (supportedColorEffects != null && supportedColorEffects.size() != 0) {
-                for (String supportedColorEffect : supportedColorEffects) {
-                    if (supportedColorEffect.equals(effect.getValue())) {
-                        isColorEffectSupported = true;
-                    }
-                }
-            } else {
-                logger.error("no supported color effects for this camera");
-            }
-
-            if (!isColorEffectSupported) {
-                logger.error(" _ color effect " + effect.getValue() + " is NOT supported");
-                return false;
-            } else {
-                logger.debug(" _ color effect " + effect.getValue() + " is supported");
-                params.setColorEffect(effect.getValue());
-            }
-
-            try {
-                camera.setParameters(params);
-            } catch (RuntimeException e) {
-                logger.error("a RuntimeException occurred during setParameters()", e);
-                return false;
-            }
-
-            return true;
+            return new Pair<>(scaledRange[0] / 1000d, scaledRange[1] / 1000d);
         }
     }
 
@@ -2055,25 +1387,20 @@ public class CameraController {
      * used to change permanent or temp (during taking photo or recording video) params for opened camera by given PHOTO
      * settings
      *
-     * @param photoSettings incorrect parameters will be replaced with actual
+     * @param cameraSettings incorrect parameters will be replaced with actual
      */
-    public boolean setCameraParameters(PhotoSettings photoSettings) {
-        logger.debug("setCameraParameters(), photoSettings=" + photoSettings);
+    public boolean setCameraSettings(@NonNull CameraSettings cameraSettings) {
+        logger.debug("setCameraSettings(), cameraSettings=" + cameraSettings);
 
         synchronized (sync) {
 
-            if (photoSettings == null) {
-                logger.error("photoSettings is null");
-                return false;
-            }
-
-            if (camera == null) {
-                logger.error("camera is null");
-                return false;
-            }
-
             if (!isCameraLocked()) {
-                logger.error("can't get/set parameters: camera is not locked");
+                logger.error("can't get parameters: camera is not locked");
+                return false;
+            }
+
+            if (isMediaRecorderRecording) {
+                logger.error("can't set parameterss: media recorder is recording");
                 return false;
             }
 
@@ -2087,74 +1414,239 @@ public class CameraController {
 
             boolean isPictureSizeSupported = false;
 
-            if ((photoSettings.getPictureWidth() > 0) && (photoSettings.getPictureHeight() > 0)) {
+            int pictureWidth = cameraSettings.getPictureWidth();
+            int pictureHeight = cameraSettings.getPictureHeight();
 
+            if (pictureWidth > 0 && pictureHeight > 0) {
                 final List<Camera.Size> supportedPictureSizes = params.getSupportedPictureSizes();
-
                 if (supportedPictureSizes != null && supportedPictureSizes.size() != 0) {
                     for (int i = 0; i < supportedPictureSizes.size(); i++) {
-
-                        // logger.debug(" _ picture size " + supportedPictureSizes.get(i).width + " and height " +
-                        // supportedPictureSizes.get(i).height);
-
-                        if ((supportedPictureSizes.get(i).width == photoSettings.getPictureWidth())
-                                && (supportedPictureSizes.get(i).height == photoSettings.getPictureHeight())) {
+                        if ((supportedPictureSizes.get(i).width == pictureWidth)
+                                && (supportedPictureSizes.get(i).height == pictureHeight)) {
                             isPictureSizeSupported = true;
                             break;
                         }
                     }
                 } else {
-                    logger.error("no supported pictures sizes for this camera");
+                    logger.error("no supported pictures sizes");
                 }
-            } else {
-                logger.error("incorrect picture size: " + photoSettings.getPictureWidth() + "x" + photoSettings.getPictureHeight());
-                photoSettings.setPictureSize(params.getPictureSize().width, params.getPictureSize().height);
             }
 
-            if (!isPictureSizeSupported) {
-                logger.error(" _ picture size " + photoSettings.getPictureWidth() + "x" + photoSettings.getPictureHeight()
-                        + " is NOT supported");
-                photoSettings.setPictureSize(params.getPictureSize().width, params.getPictureSize().height);
-            } else {
-                logger.debug(" _ picture size " + photoSettings.getPictureWidth() + "x" + photoSettings.getPictureHeight()
+            if (isPictureSizeSupported) {
+                logger.debug(" _ picture size " + pictureWidth + "x" + pictureHeight
                         + " is supported");
-                params.setPictureSize(photoSettings.getPictureWidth(), photoSettings.getPictureHeight());
+                params.setPictureSize(pictureWidth, pictureHeight);
+            } else {
+                logger.error(" _ picture size " + pictureWidth + "x" + pictureHeight
+                        + " is NOT supported");
+
+            }
+
+            boolean isPreviewFormatChanged = false;
+
+            boolean isPreviewFormatSupported = false;
+
+            ImageFormat previewFormat = cameraSettings.getPreviewFormat();
+
+            if (previewFormat != null) {
+                final List<Integer> supportedPreviewFormats = params.getSupportedPreviewFormats();
+                if (supportedPreviewFormats != null && supportedPreviewFormats.size() != 0) {
+                    for (int i = 0; i < supportedPreviewFormats.size(); i++) {
+                        if (previewFormat.getValue() == supportedPreviewFormats.get(i)) {
+                            isPreviewFormatSupported = true;
+                            break;
+                        }
+                    }
+                } else {
+                    logger.error("no supported preview formats");
+                }
+            }
+
+            if (isPreviewFormatSupported) {
+                logger.debug(" _ preview format " + previewFormat + " is supported");
+                if (params.getPreviewFormat() != previewFormat.getValue()) {
+                    params.setPreviewFormat(previewFormat.getValue());
+                    isPreviewFormatChanged = true;
+                }
+            } else {
+                logger.error(" _ preview format " + previewFormat + " is NOT supported");
             }
 
             boolean isPictureFormatSupported = false;
 
-            if (photoSettings.getPictureFormat() != null) {
+            ImageFormat pictureFormat = cameraSettings.getPictureFormat();
+
+            if (pictureFormat != null) {
                 final List<Integer> supportedPictureFormats = params.getSupportedPictureFormats();
                 if (supportedPictureFormats != null && supportedPictureFormats.size() != 0) {
                     for (int i = 0; i < supportedPictureFormats.size(); i++) {
-                        if (photoSettings.getPictureFormat().getValue() == supportedPictureFormats.get(i)) {
+                        if (pictureFormat.getValue() == supportedPictureFormats.get(i)) {
                             isPictureFormatSupported = true;
                             break;
                         }
                     }
                 } else {
-                    logger.error("no supported picture formats for this camera");
+                    logger.error("no supported picture formats for");
+                }
+            }
+
+            if (isPictureFormatSupported) {
+                logger.debug(" _ picture format " + pictureFormat + " is supported");
+                params.setPictureFormat(pictureFormat.getValue());
+            } else {
+                logger.error(" _ picture format " + pictureFormat + " is NOT supported");
+            }
+
+            int jpegQuality = cameraSettings.getJpegQuality();
+
+            if (jpegQuality > 0 && jpegQuality <= 100) {
+                logger.debug(" _ JPEG quality " + jpegQuality + " is supported");
+                params.setJpegQuality(jpegQuality);
+                params.setJpegThumbnailQuality(jpegQuality);
+            } else {
+                logger.error("incorrect jpeg quality: " + jpegQuality);
+            }
+
+            boolean isColorEffectSupported = false;
+
+            ColorEffect colorEffect = cameraSettings.getColorEffect();
+
+            final List<String> supportedColorEffects = params.getSupportedColorEffects();
+
+            if (supportedColorEffects != null && !supportedColorEffects.isEmpty()) {
+                for (String supportedColorEffect : supportedColorEffects) {
+                    if (CompareUtils.stringsEqual(colorEffect.getValue(), supportedColorEffect, false)) {
+                        isColorEffectSupported = true;
+                    }
                 }
             } else {
-                logger.error("picture format is null");
-                photoSettings.setPictureFormat(ImageFormat.fromValue(params.getPictureFormat()));
+                logger.error("no supported color effects");
             }
 
-            if (!isPictureFormatSupported) {
-                logger.error(" _ picture format " + photoSettings.getPictureFormat() + " is NOT supported");
-                photoSettings.setPictureFormat(ImageFormat.fromValue(params.getPictureFormat()));
+            if (isColorEffectSupported) {
+                logger.debug(" _ color effect " + cameraSettings.getColorEffect() + " is supported");
+                params.setColorEffect(colorEffect.getValue());
             } else {
-                logger.debug(" _ picture format " + photoSettings.getPictureFormat() + " is supported");
-                params.setPictureFormat(photoSettings.getPictureFormat().getValue());
+                logger.error(" _ color effect " + cameraSettings.getColorEffect() + " is NOT supported");
             }
 
-            if ((photoSettings.getJpegQuality() > 0) && (photoSettings.getJpegQuality() <= 100)) {
-                logger.debug(" _ JPEG quality " + photoSettings.getJpegQuality() + " is supported");
-                params.setJpegQuality(photoSettings.getJpegQuality());
-                params.setJpegThumbnailQuality(photoSettings.getJpegQuality());
+
+            boolean isFlashModeSupported = false;
+
+            FlashMode flashMode = cameraSettings.getFlashMode();
+
+            final List<String> supportedFlashModes = params.getSupportedFlashModes();
+
+            if (supportedFlashModes != null && !supportedFlashModes.isEmpty()) {
+                for (int i = 0; i < supportedFlashModes.size(); i++) {
+                    if (CompareUtils.stringsEqual(flashMode.getValue(), supportedFlashModes.get(i), false)) {
+                        isFlashModeSupported = true;
+                        break;
+                    }
+                }
             } else {
-                logger.error("incorrect jpeg quality: " + photoSettings.getJpegQuality());
-                photoSettings.setJpegQuality(params.getJpegQuality());
+                logger.error("no supported flash modes");
+            }
+
+            if (isFlashModeSupported) {
+                logger.debug(" _ flash mode " + flashMode.getValue() + " is supported");
+                params.setFlashMode(flashMode.getValue());
+            } else {
+                logger.error(" _ flash mode " + flashMode.getValue() + " is NOT supported");
+            }
+
+            boolean isFocusModeSupported = false;
+
+            FocusMode focusMode = cameraSettings.getFocusMode();
+
+            final List<String> supportedFocusModes = params.getSupportedFocusModes();
+
+            if (supportedFocusModes != null && !supportedFocusModes.isEmpty()) {
+                for (String supportedFocusMode : supportedFocusModes) {
+                    if (CompareUtils.stringsEqual(focusMode.getValue(), supportedFocusMode, true)) {
+                        isFocusModeSupported = true;
+                        break;
+                    }
+                }
+            } else {
+                logger.error("no supported focus modes");
+            }
+
+            if (!isFocusModeSupported) {
+                logger.debug(" _ focus mode " + focusMode.getValue() + " is supported");
+                params.setFocusMode(focusMode.getValue());
+            } else {
+                logger.error(" _ focus mode " + focusMode.getValue() + " is NOT supported");
+            }
+
+            boolean isPreviewFpsRangeChanged = false;
+
+            int previewFps = cameraSettings.getPreviewFrameRate();
+            int[] fpsRange;
+
+            List<int[]> supportedPreviewFpsRanges = camera.getParameters().getSupportedPreviewFpsRange();
+
+            if (supportedPreviewFpsRanges != null && !supportedPreviewFpsRanges.isEmpty()) {
+
+                if (previewFps == CameraSettings.PREVIEW_FRAME_RATE_AUTO) {
+                    fpsRange = supportedPreviewFpsRanges.get(supportedPreviewFpsRanges.size() - 1);
+                } else {
+                    fpsRange = new int[]{previewFps * 1000, previewFps * 1000};
+                }
+
+                boolean isPreviewFpsRangeSupported = false;
+
+                for (int i = 0; i < supportedPreviewFpsRanges.size(); i++) {
+
+                    final int supportedMinFpsScaled = supportedPreviewFpsRanges.get(i)[Parameters.PREVIEW_FPS_MIN_INDEX];
+                    final int supportedMaxFpsScaled = supportedPreviewFpsRanges.get(i)[Parameters.PREVIEW_FPS_MAX_INDEX];
+
+                    if (fpsRange[0] >= supportedMinFpsScaled && fpsRange[0] <= supportedMaxFpsScaled && fpsRange[1] >= supportedMinFpsScaled
+                            && fpsRange[1] <= supportedMaxFpsScaled) {
+                        isPreviewFpsRangeSupported = true;
+                        break;
+                    }
+                }
+
+                if (!isPreviewFpsRangeSupported) {
+                    logger.debug(" _ FPS range " + fpsRange[0] / 1000 + " .. " + fpsRange[1] / 1000 + " is supported");
+                    params.setPreviewFpsRange(fpsRange[0], fpsRange[1]);
+                    isPreviewFpsRangeChanged = true;
+                } else {
+                    logger.error(" _ FPS range " + fpsRange[0] / 1000 + " .. " + fpsRange[1] / 1000 + " is NOT supported");
+                }
+
+            } else {
+                logger.error("no supported preview fps ranges");
+            }
+
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.ICE_CREAM_SANDWICH_MR1) {
+                if (params.isVideoStabilizationSupported()) {
+                    logger.debug(" _ video stabilization is supported");
+                    params.setVideoStabilization(cameraSettings.isVideoStabilizationEnabled());
+                } else {
+                    logger.error(" _ video stabilization is NOT supported");
+                }
+            }
+
+            int zoom = cameraSettings.getZoom();
+
+            if (zoom != CameraSettings.ZOOM_NOT_SPECIFIED) {
+                if (zoom > 0 || zoom == CameraSettings.ZOOM_MIN || zoom == CameraSettings.ZOOM_MAX) {
+                    if (params.isZoomSupported()) {
+                        logger.debug("zoom is supported");
+                        int maxZoom = params.getMaxZoom();
+                        zoom = zoom == CameraSettings.ZOOM_MAX ? maxZoom : zoom;
+                        if (zoom <= maxZoom || zoom == CameraSettings.ZOOM_MIN) {
+                            params.setZoom(zoom);
+                        }
+                    } else {
+                        logger.error(" _ zoom is NOT supported");
+                    }
+                } else {
+                    logger.error("incorrect zoom level: " + zoom);
+                }
             }
 
             try {
@@ -2164,24 +1656,21 @@ public class CameraController {
                 return false;
             }
 
-            if (!setCameraFlashMode(photoSettings.getFlashMode())) {
-                photoSettings.setFlashMode(FlashMode.fromValue(params.getFlashMode()));
-            }
-
-            if (!setCameraFocus(photoSettings.getFocusMode())) {
-                photoSettings.setFocusMode(FocusMode.fromValue(params.getFocusMode()));
-            }
-
-            if (!setCameraColorEffect(photoSettings.getColorEffect())) {
-                photoSettings.setColorEffect(ColorEffect.fromValue(params.getColorEffect()));
+            if (isPreviewFormatChanged || isPreviewFpsRangeChanged) {
+                previewCallback.updatePreviewFormat(cameraSettings.getPreviewFormat());
+                if (isPreviewStated) {
+                    // restart preview and reset callback
+                    restartPreview();
+                    setPreviewCallback();
+                }
             }
 
             return true;
         }
     }
 
-    public boolean takePhoto(final PhotoSettings photoSettings, String photoDirectoryPath, String photoFileName, final boolean writeToFile) {
-        logger.debug("takePhoto(), photoSettings=" + photoSettings + ", photoDirectoryPath=" + photoDirectoryPath + ", photoFileName=" + photoFileName + ", writeToFile=" + writeToFile);
+    public boolean takePhoto(String photoDirectoryPath, String photoFileName, final boolean writeToFile) {
+        logger.debug("takePhoto(), photoDirectoryPath=" + photoDirectoryPath + ", photoFileName=" + photoFileName + ", writeToFile=" + writeToFile);
 
         synchronized (sync) {
 
@@ -2200,20 +1689,16 @@ public class CameraController {
                 return false;
             }
 
-            if ((this.previousPhotoSettings = getCurrentPhotoSettings()) == null) {
-                logger.error("current photo settings is null");
-                return false;
-            }
+            CameraSettings currentCameraSettings = getCurrentCameraSettings();
 
-            if (!setCameraParameters(photoSettings)) {
-                logger.error("can't set camera params by photoSettings: " + photoSettings);
+            if (currentCameraSettings == null) {
+                logger.error("can't retrieve current camera settings");
                 return false;
             }
-            this.currentPhotoSettings = photoSettings;
 
             if (writeToFile) {
                 if (TextUtils.isEmpty(photoFileName)) {
-                    photoFileName = makeNewFileName(CameraState.TAKING_PHOTO, new Date(System.currentTimeMillis()), new Pair<>(photoSettings.getPictureWidth(), photoSettings.getPictureHeight()), "jpg");
+                    photoFileName = makeNewFileName(CameraState.TAKING_PHOTO, new Date(System.currentTimeMillis()), new Pair<>(currentCameraSettings.getPictureWidth(), currentCameraSettings.getPictureHeight()), "jpg");
                 } else {
                     photoFileName = FileHelper.removeExtension(photoFileName) + ".jpg";
                 }
@@ -2226,7 +1711,7 @@ public class CameraController {
                 this.lastPhotoFile = null;
             }
 
-            if (photoSettings.getFocusMode() == FocusMode.AUTO || photoSettings.getFocusMode() == FocusMode.MACRO) {
+            if (currentCameraSettings.getFocusMode() == FocusMode.AUTO || currentCameraSettings.getFocusMode() == FocusMode.MACRO) {
 
                 camera.cancelAutoFocus();
 
@@ -2277,27 +1762,17 @@ public class CameraController {
                 throw new IllegalStateException("current camera state is not " + CameraState.TAKING_PHOTO);
             }
 
-            if (currentPhotoSettings != null) {
 
-                logger.debug("last photo file: " + lastPhotoFile);
-                if (lastPhotoFile != null) {
-                    if (FileHelper.writeBytesToFile(lastPhotoFile, data, false)) {
-                        if (currentPhotoSettings.isStoreLocationEnabled())
-                            if (!FileHelper.writeExifLocation(lastPhotoFile, lastLocation)) {
-                                logger.error("can't write location to exif");
-                            }
-                    } else {
-                        logger.error("can't write picture data to file");
-                    }
+            logger.debug("last photo file: " + lastPhotoFile);
+            if (lastPhotoFile != null) {
+                if (FileHelper.writeBytesToFile(lastPhotoFile, data, false)) {
+                    if (isStoreLocationEnabled() && lastLocation != null)
+                        if (!FileHelper.writeExifLocation(lastPhotoFile, lastLocation)) {
+                            logger.error("can't write location to exif");
+                        }
+                } else {
+                    logger.error("can't write picture data to file");
                 }
-                currentPhotoSettings = null;
-            }
-
-            if (previousPhotoSettings != null) {
-                if (!setCameraParameters(previousPhotoSettings)) {
-                    logger.error("can't set camera params by previousPhotoSettings: " + previousPhotoSettings);
-                }
-                previousPhotoSettings = null;
             }
 
             startPreview();
@@ -2328,42 +1803,6 @@ public class CameraController {
         }
     }
 
-    /**
-     * parameters flashMode, focusMode, colorEffect will be actual, other - default
-     */
-    public VideoSettings getCurrentVideoSettings() {
-
-        if (camera != null) {
-
-            if (!isCameraLocked()) {
-                logger.error("can't get parameters: camera is not locked");
-                return null;
-            }
-
-            final Parameters params;
-
-            try {
-                params = camera.getParameters();
-            } catch (RuntimeException e) {
-                logger.error("a RuntimeException occurred during getParameters()");
-                return null;
-            }
-
-            try {
-                return new VideoSettings(cameraId, VideoQuality.DEFAULT, null, null, false, null, VideoSettings.DEFAULT_VIDEO_FRAME_RATE,
-                        FlashMode.fromValue(params.getFlashMode()), FocusMode.fromValue(params.getFocusMode()),
-                        ColorEffect.fromValue(params.getColorEffect()), false, 0);
-            } catch (IllegalArgumentException e) {
-                logger.error("an IllegalArgumentException occurred during fromValue(): " + e.getMessage());
-                return null;
-            }
-        }
-
-        logger.error("camera is null");
-        return null;
-
-    }
-
     public VideoSettings getLowVideoSettings() {
 
         if (camera == null) {
@@ -2376,27 +1815,15 @@ public class CameraController {
             return null;
         }
 
-        final List<Camera.Size> supportedVideoSizes = getSupportedVideoSizes();
-
-        if (supportedVideoSizes == null || supportedVideoSizes.isEmpty()) {
-            logger.error("supportedVideoSizes is null or empty");
-            return null;
-        }
-
-        StringBuilder videSizesStr = new StringBuilder();
-        for (Size s : supportedVideoSizes)
-            videSizesStr.append("[" + s.width + "x" + s.height + "]");
-        logger.debug("_ supported video sizes: " + videSizesStr);
-
-        final Size lowVideoSize = findLowSize(supportedVideoSizes);
+        final Size lowVideoSize = findLowSize(getSupportedVideoSizes());
         if (lowVideoSize != null) {
             logger.debug(" _ low VIDEO size: " + lowVideoSize.width + "x" + lowVideoSize.height);
         } else {
             logger.error(" _ low VIDEO size is null");
         }
 
-        return new VideoSettings(cameraId, VideoQuality.LOW, VideoEncoder.H264, AudioEncoder.AAC, false, lowVideoSize,
-                VideoSettings.VIDEO_FRAME_RATE_MAX, FlashMode.AUTO, FocusMode.AUTO, ColorEffect.NONE,
+        return new VideoSettings(cameraId, VideoQuality.LOW, VideoEncoder.H264, AudioEncoder.AAC, false,
+                lowVideoSize, VideoSettings.VIDEO_FRAME_RATE_MAX,
                 VideoSettings.DEFAULT_ENABLE_MAKE_PREVIEW, VideoSettings.DEFAULT_PREVIEW_GRID_SIZE);
     }
 
@@ -2412,27 +1839,15 @@ public class CameraController {
             return null;
         }
 
-        final List<Camera.Size> supportedVideoSizes = getSupportedVideoSizes();
-
-        if (supportedVideoSizes == null || supportedVideoSizes.isEmpty()) {
-            logger.error("supportedVideoSizes is null or empty");
-            return null;
-        }
-
-        StringBuilder videSizesStr = new StringBuilder();
-        for (Size s : supportedVideoSizes)
-            videSizesStr.append("[" + s.width + "x" + s.height + "]");
-        logger.debug("_ supported video sizes: " + videSizesStr);
-
-        final Size mediumVideoSize = findMediumSize(supportedVideoSizes);
+        final Size mediumVideoSize = findMediumSize(getSupportedVideoSizes());
         if (mediumVideoSize != null) {
             logger.debug(" _ medium VIDEO size: " + mediumVideoSize.width + "x" + mediumVideoSize.height);
         } else {
             logger.error(" _ medium VIDEO size is null");
         }
 
-        return new VideoSettings(cameraId, VideoQuality.DEFAULT, VideoEncoder.H264, AudioEncoder.AAC, false, mediumVideoSize,
-                VideoSettings.VIDEO_FRAME_RATE_MAX, FlashMode.AUTO, FocusMode.AUTO, ColorEffect.NONE,
+        return new VideoSettings(cameraId, VideoQuality.DEFAULT, VideoEncoder.H264, AudioEncoder.AAC, false,
+                mediumVideoSize, VideoSettings.VIDEO_FRAME_RATE_MAX,
                 VideoSettings.DEFAULT_ENABLE_MAKE_PREVIEW, VideoSettings.DEFAULT_PREVIEW_GRID_SIZE);
     }
 
@@ -2448,27 +1863,15 @@ public class CameraController {
             return null;
         }
 
-        final List<Camera.Size> supportedVideoSizes = getSupportedVideoSizes();
-
-        if (supportedVideoSizes == null || supportedVideoSizes.isEmpty()) {
-            logger.error("supportedVideoSizes is null or empty");
-            return null;
-        }
-
-        StringBuilder videSizesStr = new StringBuilder();
-        for (Size s : supportedVideoSizes)
-            videSizesStr.append("[" + s.width + "x" + s.height + "]");
-        logger.debug("_ supported video sizes: " + videSizesStr);
-
-        final Size highVideoSize = findHighSize(supportedVideoSizes);
+        final Size highVideoSize = findHighSize(getSupportedVideoSizes());
         if (highVideoSize != null) {
             logger.debug(" _ high VIDEO size: " + highVideoSize.width + "x" + highVideoSize.height);
         } else {
             logger.error(" _ high VIDEO size is null");
         }
 
-        return new VideoSettings(cameraId, VideoQuality.HIGH, VideoEncoder.H264, AudioEncoder.AAC, false, highVideoSize,
-                VideoSettings.VIDEO_FRAME_RATE_MAX, FlashMode.AUTO, FocusMode.AUTO, ColorEffect.NONE,
+        return new VideoSettings(cameraId, VideoQuality.HIGH, VideoEncoder.H264, AudioEncoder.AAC, false,
+                highVideoSize, VideoSettings.VIDEO_FRAME_RATE_MAX,
                 VideoSettings.DEFAULT_ENABLE_MAKE_PREVIEW, VideoSettings.DEFAULT_PREVIEW_GRID_SIZE);
     }
 
@@ -2513,9 +1916,8 @@ public class CameraController {
      * @param videoSettings   must not be null
      * @param previewFpsRange if is not null and requested fps falls within the range, it will be applied
      */
-    private boolean setMediaRecorderParams(CamcorderProfile profile, VideoSettings videoSettings, double[] previewFpsRange) {
-        logger.debug("setMediaRecorderParams(), profile=" + profile + ", videoSettings=" + videoSettings + ", previewFpsRange="
-                + Arrays.toString(previewFpsRange));
+    private boolean setMediaRecorderParams(CamcorderProfile profile, VideoSettings videoSettings, Pair<Double, Double> previewFpsRange) {
+        logger.debug("setMediaRecorderParams(), profile=" + profile + ", videoSettings=" + videoSettings + ", previewFpsRange=" + previewFpsRange);
 
         if (videoSettings == null) {
             logger.error("can't set media recorder parameters: videoSettings is null");
@@ -2532,14 +1934,10 @@ public class CameraController {
             return false;
         }
 
-        if (previewFpsRange != null && previewFpsRange.length > 2) {
-            previewFpsRange = null;
-        }
-
         int videoFrameRate = profile != null ? profile.videoFrameRate : VideoSettings.VIDEO_FRAME_RATE_MAX;
 
-        if (previewFpsRange != null && videoSettings.getVideoFrameRate() >= previewFpsRange[0]
-                && videoSettings.getVideoFrameRate() <= previewFpsRange[1]) {
+        if (previewFpsRange != null && videoSettings.getVideoFrameRate() >= previewFpsRange.first
+                && videoSettings.getVideoFrameRate() <= previewFpsRange.second) {
             videoFrameRate = videoSettings.getVideoFrameRate();
         } else if (videoSettings.getVideoFrameRate() == VideoSettings.VIDEO_FRAME_RATE_AUTO) {
 
@@ -2553,7 +1951,8 @@ public class CameraController {
                 }
             }
 
-            if (previewFpsRange != null && previewCallback.getLastFps() >= previewFpsRange[0] && previewCallback.getLastFps() <= previewFpsRange[1]) {
+            if (previewFpsRange != null && previewCallback.getLastFps() >= previewFpsRange.first &&
+                    previewCallback.getLastFps() <= previewFpsRange.second) {
                 videoFrameRate = previewCallback.getLastFps();
             } else {
                 videoFrameRate = VideoSettings.VIDEO_FRAME_RATE_MAX;
@@ -2730,63 +2129,6 @@ public class CameraController {
         }
     }
 
-    /**
-     * used to change permanent or temp (during taking photo or recording video) params for opened camera by given VIDEO
-     * settings
-     *
-     * @param videoSettings incorrect parameters will be replaced with actual
-     */
-    public boolean setCameraParameters(VideoSettings videoSettings) {
-        logger.debug("setCameraParameters(), videoSettings=" + videoSettings);
-
-        synchronized (sync) {
-
-            if (videoSettings == null) {
-                logger.error("videoSettings is null");
-                return false;
-            }
-
-            if (camera == null) {
-                logger.error("camera is null");
-                return false;
-            }
-
-            if (!isCameraLocked()) {
-                logger.error("can't get/set parameters: camera is not locked");
-                return false;
-            }
-
-            final Parameters params;
-            try {
-                params = camera.getParameters();
-            } catch (RuntimeException e) {
-                logger.error("a RuntimeException occurred during getParameters()", e);
-                return false;
-            }
-
-            if (!setCameraFlashMode(videoSettings.getFlashMode())) {
-                videoSettings.setFlashMode(FlashMode.fromValue(params.getFlashMode()));
-            }
-
-            if (!setCameraFocus(videoSettings.getFocusMode())) {
-                videoSettings.setFocusMode(FocusMode.fromValue(params.getFocusMode()));
-            }
-
-            if (!setCameraColorEffect(videoSettings.getColorEffect())) {
-                videoSettings.setColorEffect(ColorEffect.fromValue(params.getColorEffect()));
-            }
-
-            try {
-                camera.setParameters(params);
-            } catch (RuntimeException e) {
-                logger.error("a RuntimeException occurred during setParameters()", e);
-                return false;
-            }
-
-            return true;
-        }
-    }
-
     private boolean prepareMediaRecorder(VideoSettings videoSettings, VideoRecordLimit recLimit, String saveDirectoryPath, String fileName) {
 
         synchronized (sync) {
@@ -2808,15 +2150,6 @@ public class CameraController {
                 return false;
             }
 
-            if ((this.previousVideoSettings = getCurrentVideoSettings()) == null) {
-                logger.error("current video settings is null");
-                return false;
-            }
-
-            if (!setCameraParameters(videoSettings)) {
-                logger.error("can't set camera params by videoSettings: " + videoSettings);
-                return false;
-            }
             this.currentVideoSettings = videoSettings;
 
             final CamcorderProfile profile;
@@ -2877,7 +2210,7 @@ public class CameraController {
 
             }
 
-            final double[] previewFpsRange = getCameraPreviewFpsRange();
+            final Pair<Double, Double> previewFpsRange = getCameraPreviewFpsRange();
 
             stopPreview();
 
@@ -2923,7 +2256,7 @@ public class CameraController {
 
             mediaRecorder.setVideoSource(MediaRecorder.VideoSource.CAMERA);
 
-            if (videoSettings.isStoreLocationEnabled() && lastLocation != null
+            if (isStoreLocationEnabled() && lastLocation != null
                     && (Double.compare(lastLocation.getLatitude(), 0.0d) != 0 || Double.compare(lastLocation.getLongitude(), 0.0d) != 0)) {
                 if (Build.VERSION.SDK_INT > Build.VERSION_CODES.ICE_CREAM_SANDWICH) {
                     logger.debug("set video location: latitude " + lastLocation.getLatitude() + " longitude " + lastLocation.getLongitude()
@@ -3024,13 +2357,6 @@ public class CameraController {
 
                 startPreview();
                 setPreviewCallback();
-
-                if (previousVideoSettings != null) {
-                    if (!setCameraParameters(previousVideoSettings)) {
-                        logger.error("can't set camera params by previousVideoSettings: " + previousVideoSettings);
-                    }
-                    previousVideoSettings = null;
-                }
             }
         }
     }
@@ -3360,22 +2686,17 @@ public class CameraController {
 
         private final int cameraId;
         private final SurfaceView surfaceView;
-        private final boolean setMaxFps;
-        private final boolean setRgbPreviewFormat;
-        private final boolean enableVideoStabilization;
+        private final CameraSettings cameraSettings;
         @Nullable
         private final CountDownLatch latch;
 
         private boolean openResult = false;
 
-        CameraThread(final int cameraId, final SurfaceView surfaceView, final boolean setMaxFps, final boolean setRgbPreviewFormat,
-                             final boolean enableVideoStabilization, @Nullable final CountDownLatch latch) {
+        CameraThread(final int cameraId, final SurfaceView surfaceView, CameraSettings cameraSettings, @Nullable final CountDownLatch latch) {
             super(CameraThread.class.getSimpleName());
             this.cameraId = cameraId;
-            this.surfaceView= surfaceView;
-            this.setMaxFps = setMaxFps;
-            this.setRgbPreviewFormat = setRgbPreviewFormat;
-            this.enableVideoStabilization = enableVideoStabilization;
+            this.surfaceView = surfaceView;
+            this.cameraSettings = cameraSettings;
             this.latch = latch;
         }
 
@@ -3389,7 +2710,7 @@ public class CameraController {
             addNewTask(new Runnable() {
                 @Override
                 public void run() {
-                    CameraThread.this.openResult = createCamera(cameraId, surfaceView, setMaxFps, setRgbPreviewFormat, enableVideoStabilization);
+                    CameraThread.this.openResult = createCamera(cameraId, surfaceView, cameraSettings);
                     if (latch != null) {
                         latch.countDown();
                     }

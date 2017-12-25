@@ -1,5 +1,9 @@
 package net.maxsmr.cameracontroller.camera.settings;
 
+import android.support.annotation.Nullable;
+
+import net.maxsmr.commonutils.data.CompareUtils;
+
 import java.lang.reflect.Field;
 
 public enum FocusMode {
@@ -67,19 +71,16 @@ public enum FocusMode {
         return null;
     }
 
-    public static FocusMode fromValue(String value) throws IllegalArgumentException {
-
-        if (value == null) {
-            return null;
-        }
-
+    @Nullable
+    public static FocusMode fromValue(String value) {
+        FocusMode result = null;
         for (FocusMode focusMode : FocusMode.values()) {
-            if (focusMode.getValue() != null && focusMode.getValue().equals(value)) {
-                return focusMode;
+            if (CompareUtils.stringsEqual(value, focusMode.getValue(), false)) {
+                result = focusMode;
+                break;
             }
         }
-
-        throw new IllegalArgumentException("Incorrect native value for enum type " + FocusMode.class.getName() + ": " + value);
+        return result;
     }
 
 }

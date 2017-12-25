@@ -33,6 +33,9 @@ android {
             keyAlias 'maxsmirnov'
             storeFile file('~/.android/release-key.keystore')
         }
+        debug {
+            storeFile file('~/.android/debug.keystore')
+        }
     }
 
     compileSdkVersion sdkVersion

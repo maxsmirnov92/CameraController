@@ -1,85 +1,86 @@
 package net.maxsmr.cameracontroller.camera.settings;
 
+import android.support.annotation.Nullable;
+
+import net.maxsmr.commonutils.data.CompareUtils;
+
 import java.lang.reflect.Field;
 
 public enum ColorEffect {
 
-	NONE(0, "EFFECT_NONE"),
+    NONE(0, "EFFECT_NONE"),
 
-	MONOCHROME(1, "EFFECT_MONO"),
+    MONOCHROME(1, "EFFECT_MONO"),
 
-	NEGATIVE(2, "EFFECT_NEGATIVE"),
+    NEGATIVE(2, "EFFECT_NEGATIVE"),
 
-	POSTERIZE(3, "EFFECT_POSTERIZE"),
+    POSTERIZE(3, "EFFECT_POSTERIZE"),
 
-	SEPIA(4, "EFFECT_SEPIA"),
+    SEPIA(4, "EFFECT_SEPIA"),
 
-	SOLARIZE(5, "EFFECT_SOLARIZE"),
+    SOLARIZE(5, "EFFECT_SOLARIZE"),
 
-	WHITEBOARD(6, "EFFECT_WHITEBOARD");
+    WHITEBOARD(6, "EFFECT_WHITEBOARD");
 
-	ColorEffect(int id, String constValue) {
-		this.id = id;
-		this.constantValue = constValue;
-	}
+    ColorEffect(int id, String constValue) {
+        this.id = id;
+        this.constantValue = constValue;
+    }
 
-	private static final String constantClassName = "android.hardware.Camera$Parameters";
-	private final String constantValue;
-	private final int id;
+    private static final String constantClassName = "android.hardware.Camera$Parameters";
+    private final String constantValue;
+    private final int id;
 
-	@SuppressWarnings("rawtypes")
-	private static Class constClass = null;
+    @SuppressWarnings("rawtypes")
+    private static Class constClass = null;
 
-	private static void loadClass() throws ClassNotFoundException {
-		if (constClass == null)
-			constClass = Class.forName(constantClassName);
-	}
+    private static void loadClass() throws ClassNotFoundException {
+        if (constClass == null)
+            constClass = Class.forName(constantClassName);
+    }
 
-	public int getId() {
-		return id;
-	}
+    public int getId() {
+        return id;
+    }
 
-	public String getValue() {
+    public String getValue() {
 
-		try {
-			loadClass();
-		} catch (ClassNotFoundException e) {
-			throw new RuntimeException(String.format("Class '%s' not found", constantClassName));
-		}
+        try {
+            loadClass();
+        } catch (ClassNotFoundException e) {
+            throw new RuntimeException(String.format("Class '%s' not found", constantClassName));
+        }
 
-		Field[] fields = constClass.getDeclaredFields();
+        Field[] fields = constClass.getDeclaredFields();
 
-		try {
+        try {
 
-			for (Field field : fields) {
+            for (Field field : fields) {
 
-				// field.setAccessible(true);
+                // field.setAccessible(true);
 
-				if (field.getName().equals(constantValue))
-					return (String) field.get(null);
+                if (field.getName().equals(constantValue))
+                    return (String) field.get(null);
 
-			}
+            }
 
-		} catch (IllegalAccessException e) {
-			throw new RuntimeException(String.format("IllegalAccessException for %s", constantClassName + '.' + constantValue));
-		}
+        } catch (IllegalAccessException e) {
+            throw new RuntimeException(String.format("IllegalAccessException for %s", constantClassName + '.' + constantValue));
+        }
 
-		return null;
-	}
+        return null;
+    }
 
-	public static ColorEffect fromValue(String value) throws IllegalArgumentException {
-
-		if (value == null) {
-			return null;
-		}
-
-		for (ColorEffect colorEffect : ColorEffect.values()) {
-			if (colorEffect.getValue() != null && colorEffect.getValue().equals(value)) {
-				return colorEffect;
-			}
-		}
-
-		throw new IllegalArgumentException("Incorrect native value for enum type " + ColorEffect.class.getName() + ": " + value);
-	}
+    @Nullable
+    public static ColorEffect fromValue(String value) {
+        ColorEffect result = null;
+        for (ColorEffect colorEffect : ColorEffect.values()) {
+            if (CompareUtils.stringsEqual(value, colorEffect.getValue(), false)) {
+                result = colorEffect;
+                break;
+            }
+        }
+        return result;
+    }
 
 }

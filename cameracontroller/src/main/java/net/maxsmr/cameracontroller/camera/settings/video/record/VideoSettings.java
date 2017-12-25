@@ -23,7 +23,47 @@ public class VideoSettings implements Serializable {
 
     private static final Logger logger = LoggerFactory.getLogger(VideoSettings.class);
 
+
+    public static final int VIDEO_FRAME_RATE_MAX = 60;
+    /**
+     * use calculated value in onPreviewFrame() callback if exists
+     */
+    public static final int VIDEO_FRAME_RATE_AUTO = 0;
+
+    public static final int DEFAULT_VIDEO_FRAME_RATE = VIDEO_FRAME_RATE_AUTO;
+
+    public static final int DEFAULT_PREVIEW_GRID_SIZE = 3;
+
+    public static final boolean DEFAULT_ENABLE_MAKE_PREVIEW = true;
+
+    public static final boolean DEFAULT_DISABLE_AUDIO = false;
+
+    private VideoQuality quality = VideoQuality.DEFAULT;
+
+    private VideoEncoder videoEncoder = VideoEncoder.DEFAULT;
+
+    private AudioEncoder audioEncoder = AudioEncoder.DEFAULT;
+
+    private boolean disableAudio = DEFAULT_DISABLE_AUDIO;
+
+    private int width = -1;
+
+    private int height = -1;
+
+    private int frameRate = DEFAULT_VIDEO_FRAME_RATE;
+
+    private boolean enableMakePreview = DEFAULT_ENABLE_MAKE_PREVIEW;
+
+    private int previewGridSize = DEFAULT_PREVIEW_GRID_SIZE;
+
+    /** default */
     public VideoSettings() {
+    }
+
+    public VideoSettings(int cameraId, VideoQuality quality, VideoEncoder videoEncoder, AudioEncoder audioEncoder, boolean disableAudio,
+                         Size videoSize, int frameRate,
+                         boolean enableMakePreview, int previewGridSize) {
+        this(cameraId, quality, videoEncoder, audioEncoder, disableAudio, videoSize.width, videoSize.height, frameRate, enableMakePreview, previewGridSize);
     }
 
     /**
@@ -33,11 +73,8 @@ public class VideoSettings implements Serializable {
      *                  frame rate
      */
     public VideoSettings(int cameraId, VideoQuality quality, VideoEncoder videoEncoder, AudioEncoder audioEncoder, boolean disableAudio,
-                         Size videoSize, int frameRate, FlashMode flashMode, FocusMode focusMode, ColorEffect effect,
+                         int videoWidth, int videoHeight, int frameRate,
                          boolean enableMakePreview, int previewGridSize) {
-
-//        setParentDirPath(parentDirPath);
-//        setFileName(fileName);
 
         setQuality(cameraId, quality);
 
@@ -46,43 +83,12 @@ public class VideoSettings implements Serializable {
 
         disableAudio(disableAudio);
 
-        setVideoFrameSize(videoSize);
+        setVideoFrameSize(videoWidth, videoHeight);
         setVideoFrameRate(frameRate);
-
-        setFlashMode(flashMode);
-        setFocusMode(focusMode);
-        setColorEffect(effect);
 
         enableMakePreview(enableMakePreview);
         setPreviewGridSize(previewGridSize);
     }
-
-//    File parentDirPath;
-//
-//    public File getParentDirPath() {
-//        return parentDirPath;
-//    }
-//
-//    public void setParentDirPath(String path) {
-//        if (!TextUtils.isEmpty(path)) {
-//            parentDirPath = new File(path);
-//        }
-//    }
-//
-//    String fileName;
-//
-//    public String getFileName() {
-//        return fileName;
-//    }
-//
-//    public void setFileName(String name) {
-//        if (!TextUtils.isEmpty(name)) {
-//            fileName = name;
-//        }
-//    }
-
-    @Expose
-    VideoQuality quality = VideoQuality.DEFAULT;
 
     public VideoQuality getQuality() {
         return quality;
@@ -104,9 +110,6 @@ public class VideoSettings implements Serializable {
         }
     }
 
-    @Expose
-    VideoEncoder videoEncoder = VideoEncoder.DEFAULT;
-
     public VideoEncoder getVideoEncoder() {
         return videoEncoder;
     }
@@ -115,9 +118,6 @@ public class VideoSettings implements Serializable {
         if (videoEncoder != null)
             this.videoEncoder = videoEncoder;
     }
-
-    @Expose
-    AudioEncoder audioEncoder = AudioEncoder.DEFAULT;
 
     public AudioEncoder getAudioEncoder() {
         return audioEncoder;
@@ -128,9 +128,6 @@ public class VideoSettings implements Serializable {
             this.audioEncoder = audioEncoder;
     }
 
-    public final static boolean DEFAULT_DISABLE_AUDIO = false;
-    @Expose
-    boolean disableAudio = DEFAULT_DISABLE_AUDIO;
 
     public boolean isAudioDisabled() {
         return disableAudio;
@@ -139,22 +136,6 @@ public class VideoSettings implements Serializable {
     public void disableAudio(boolean disable) {
         this.disableAudio = disable;
     }
-
-    public final static boolean DEFAULT_ENABLE_STORE_LOCATION = true;
-    boolean enableStoreLocation = DEFAULT_ENABLE_STORE_LOCATION;
-
-    public boolean isStoreLocationEnabled() {
-        return enableStoreLocation;
-    }
-
-    public void enableStoreLocation(boolean enable) {
-        this.enableStoreLocation = enable;
-    }
-
-    @Expose
-    int width = -1;
-    @Expose
-    int height = -1;
 
     public int getVideoFrameWidth() {
         return width;
@@ -178,68 +159,21 @@ public class VideoSettings implements Serializable {
         this.height = height;
     }
 
-    public final static int VIDEO_FRAME_RATE_MAX = 30;
-    /**
-     * use calculated value in onPreviewFrame() callback if exists
-     */
-    public final static int VIDEO_FRAME_RATE_AUTO = 0;
-    public final static int DEFAULT_VIDEO_FRAME_RATE = VIDEO_FRAME_RATE_AUTO;
-    @Expose
-    int frameRate = DEFAULT_VIDEO_FRAME_RATE;
-
     public int getVideoFrameRate() {
         return frameRate;
     }
 
     /**
-     * @param frameRate 0 - auto, measured frame rate will be applied (if it was already calculated), (0..30] - custom
+     * @param frameRate {@linkplain VIDEO_FRAME_RATE_AUTO} - auto, measured frame rate will be applied (if it was already calculated), (0..{@link VIDEO_FRAME_RATE_MAX}] - custom
      *                  frame rate
      */
     public boolean setVideoFrameRate(int frameRate) {
-        if (frameRate >= 0 && frameRate <= VIDEO_FRAME_RATE_MAX) {
+        if (frameRate > 0 && frameRate <= VIDEO_FRAME_RATE_MAX || frameRate == VIDEO_FRAME_RATE_AUTO) {
             this.frameRate = frameRate;
             return true;
-        } else {
-            return false;
         }
+        return false;
     }
-
-    @Expose
-    FlashMode flashMode = FlashMode.AUTO;
-
-    public FlashMode getFlashMode() {
-        return flashMode;
-    }
-
-    public void setFlashMode(FlashMode flashMode) {
-        this.flashMode = flashMode;
-    }
-
-    @Expose
-    FocusMode focusMode = FocusMode.AUTO;
-
-    public FocusMode getFocusMode() {
-        return focusMode;
-    }
-
-    public void setFocusMode(FocusMode focusMode) {
-        this.focusMode = focusMode;
-    }
-
-    @Expose
-    ColorEffect colorEffect = ColorEffect.NONE;
-
-    public ColorEffect getColorEffect() {
-        return colorEffect;
-    }
-
-    public void setColorEffect(ColorEffect effect) {
-        this.colorEffect = effect;
-    }
-
-    public final static boolean DEFAULT_ENABLE_MAKE_PREVIEW = true;
-    @Expose
-    boolean enableMakePreview = DEFAULT_ENABLE_MAKE_PREVIEW;
 
     public boolean isMakePreviewEnabled() {
         return enableMakePreview;
@@ -248,10 +182,6 @@ public class VideoSettings implements Serializable {
     public void enableMakePreview(boolean enable) {
         enableMakePreview = enable;
     }
-
-    public final static int DEFAULT_PREVIEW_GRID_SIZE = 3;
-    @Expose
-    int previewGridSize = DEFAULT_PREVIEW_GRID_SIZE;
 
     public int getPreviewGridSize() {
         return previewGridSize;
@@ -264,71 +194,4 @@ public class VideoSettings implements Serializable {
         this.previewGridSize = previewGridSize;
         return true;
     }
-
-    @Override
-    public int hashCode() {
-        final int prime = 31;
-        int result = 1;
-        result = prime * result + ((audioEncoder == null) ? 0 : audioEncoder.hashCode());
-        result = prime * result + ((colorEffect == null) ? 0 : colorEffect.hashCode());
-        result = prime * result + (disableAudio ? 1231 : 1237);
-        result = prime * result + (enableMakePreview ? 1231 : 1237);
-        result = prime * result + (enableStoreLocation ? 1231 : 1237);
-        result = prime * result + ((flashMode == null) ? 0 : flashMode.hashCode());
-        result = prime * result + ((focusMode == null) ? 0 : focusMode.hashCode());
-        result = prime * result + frameRate;
-        result = prime * result + height;
-        result = prime * result + previewGridSize;
-        result = prime * result + ((quality == null) ? 0 : quality.hashCode());
-        result = prime * result + ((videoEncoder == null) ? 0 : videoEncoder.hashCode());
-        result = prime * result + width;
-        return result;
-    }
-
-    @Override
-    public boolean equals(Object obj) {
-        if (this == obj)
-            return true;
-        if (obj == null)
-            return false;
-        if (getClass() != obj.getClass())
-            return false;
-        VideoSettings other = (VideoSettings) obj;
-        if (audioEncoder != other.audioEncoder)
-            return false;
-        if (colorEffect != other.colorEffect)
-            return false;
-        if (disableAudio != other.disableAudio)
-            return false;
-        if (enableMakePreview != other.enableMakePreview)
-            return false;
-        if (enableStoreLocation != other.enableStoreLocation)
-            return false;
-        if (flashMode != other.flashMode)
-            return false;
-        if (focusMode != other.focusMode)
-            return false;
-        if (frameRate != other.frameRate)
-            return false;
-        if (height != other.height)
-            return false;
-        if (previewGridSize != other.previewGridSize)
-            return false;
-        if (quality != other.quality)
-            return false;
-        if (videoEncoder != other.videoEncoder)
-            return false;
-        if (width != other.width)
-            return false;
-        return true;
-    }
-
-    @Override
-    public String toString() {
-        return "VideoSettings [quality=" + quality + ", videoEncoder=" + videoEncoder + ", audioEncoder=" + audioEncoder
-                + ", disableAudio=" + disableAudio + ", enableStoreLocation=" + enableStoreLocation + ", width=" + width + ", height="
-                + height + ", frameRate=" + frameRate + ", flashMode=" + flashMode + ", focusMode=" + focusMode + ", colorEffect="
-                + colorEffect + ", enableMakePreview=" + enableMakePreview + ", previewGridSize=" + previewGridSize + "]";
-    }
-
 }

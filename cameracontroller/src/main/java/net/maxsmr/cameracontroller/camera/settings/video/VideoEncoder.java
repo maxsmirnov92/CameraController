@@ -59,14 +59,14 @@ public enum VideoEncoder {
 		return -1;
 	}
 
-	public static VideoEncoder fromValue(int value) throws IllegalArgumentException {
-
-		for (VideoEncoder videoEncoder : VideoEncoder.values()) {
-			if (videoEncoder.getValue() == value) {
-				return videoEncoder;
+	public static VideoEncoder fromValue(int value) {
+		VideoEncoder result = null;
+		for (VideoEncoder encoder : VideoEncoder.values()) {
+			if (value == encoder.getValue()) {
+				result = encoder;
+				break;
 			}
 		}
-
-		throw new IllegalArgumentException("Incorrect native value for enum type " + VideoEncoder.class.getName() + ": " + value);
+		return result;
 	}
 }

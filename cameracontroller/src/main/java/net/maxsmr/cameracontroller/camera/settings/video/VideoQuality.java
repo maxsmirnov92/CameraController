@@ -73,13 +73,14 @@ public enum VideoQuality {
 		return -1;
 	}
 
-	public static VideoQuality fromValue(int value) throws IllegalArgumentException {
-
+	public static VideoQuality fromValue(int value) {
+		VideoQuality result = null;
 		for (VideoQuality quality : VideoQuality.values()) {
-			if (quality.getValue() == value) {
-				return quality;
+			if (value == quality.getValue()) {
+				result = quality;
+				break;
 			}
 		}
-		throw new IllegalArgumentException("Incorrect native value for enum type " + VideoQuality.class.getName() + ": " + value);
+		return result;
 	}
 }

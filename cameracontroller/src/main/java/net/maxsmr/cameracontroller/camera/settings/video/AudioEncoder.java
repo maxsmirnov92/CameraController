@@ -1,5 +1,7 @@
 package net.maxsmr.cameracontroller.camera.settings.video;
 
+import net.maxsmr.cameracontroller.camera.settings.photo.ImageFormat;
+
 import java.lang.reflect.Field;
 
 public enum AudioEncoder {
@@ -59,14 +61,14 @@ public enum AudioEncoder {
 		return -1;
 	}
 
-	public static AudioEncoder fromValue(int value) throws IllegalArgumentException {
-
-		for (AudioEncoder audioEncoder : AudioEncoder.values()) {
-			if (audioEncoder.getValue() == value) {
-				return audioEncoder;
+	public static AudioEncoder fromValue(int value) {
+		AudioEncoder result = null;
+		for (AudioEncoder encoder : AudioEncoder.values()) {
+			if (value == encoder.getValue()) {
+				result = encoder;
+				break;
 			}
 		}
-		throw new IllegalArgumentException("Incorrect native value for enum type " + AudioEncoder.class.getName() + ": " + value);
-
+		return result;
 	}
 }

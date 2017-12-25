@@ -1,5 +1,9 @@
 package net.maxsmr.cameracontroller.camera.settings;
 
+import android.support.annotation.Nullable;
+
+import net.maxsmr.commonutils.data.CompareUtils;
+
 import java.lang.reflect.Field;
 
 public enum FlashMode {
@@ -63,19 +67,16 @@ public enum FlashMode {
 		return null;
 	}
 
-	public static FlashMode fromValue(String value) throws IllegalArgumentException {
-
-		if (value == null) {
-			return null;
-		}
-
+	@Nullable
+	public static FlashMode fromValue(String value) {
+		FlashMode result = null;
 		for (FlashMode flashMode : FlashMode.values()) {
-			if (flashMode.getValue() != null && flashMode.getValue().equals(value)) {
-				return flashMode;
+			if (CompareUtils.stringsEqual(value, flashMode.getValue(), false)) {
+				result = flashMode;
+				break;
 			}
 		}
-
-		throw new IllegalArgumentException("Incorrect native value for enum type " + FlashMode.class.getName() + ": " + value);
+		return result;
 	}
 
 }
