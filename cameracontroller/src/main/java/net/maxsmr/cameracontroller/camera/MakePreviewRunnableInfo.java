@@ -1,4 +1,4 @@
-package net.maxsmr.cameracontroller.executors.info;
+package net.maxsmr.cameracontroller.camera;
 
 import net.maxsmr.tasksutils.taskexecutor.RunnableInfo;
 

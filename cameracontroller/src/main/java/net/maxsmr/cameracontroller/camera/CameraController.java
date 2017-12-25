@@ -19,6 +19,7 @@ import android.media.MediaRecorder;
 import android.media.MediaRecorder.OnErrorListener;
 import android.media.MediaRecorder.OnInfoListener;
 import android.net.Uri;
+import android.os.AsyncTask;
 import android.os.Build;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
@@ -31,7 +32,6 @@ import android.view.SurfaceView;
 import android.view.ViewGroup.LayoutParams;
 import android.view.WindowManager;
 
-import net.maxsmr.cameracontroller.executors.IdsHolder;
 import net.maxsmr.cameracontroller.frame.FrameCalculator;
 import net.maxsmr.cameracontroller.frame.stats.IFrameStatsListener;
 import net.maxsmr.cameracontroller.logger.base.Logger;
@@ -41,13 +41,14 @@ import net.maxsmr.commonutils.data.FileHelper;
 import net.maxsmr.commonutils.data.Observable;
 import net.maxsmr.commonutils.graphic.GraphicUtils;
 import net.maxsmr.tasksutils.CustomHandlerThread;
+import net.maxsmr.tasksutils.handler.HandlerRunnable;
+import net.maxsmr.tasksutils.storage.ids.IdHolder;
 import net.maxsmr.tasksutils.taskexecutor.TaskRunnable;
 
 import java.io.File;
 import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
@@ -57,8 +58,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
-import net.maxsmr.cameracontroller.executors.MakePreviewThreadPoolExecutor;
-import net.maxsmr.cameracontroller.executors.info.MakePreviewRunnableInfo;
 import net.maxsmr.cameracontroller.camera.settings.ColorEffect;
 import net.maxsmr.cameracontroller.camera.settings.FlashMode;
 import net.maxsmr.cameracontroller.camera.settings.FocusMode;
@@ -69,6 +68,7 @@ import net.maxsmr.cameracontroller.camera.settings.video.VideoEncoder;
 import net.maxsmr.cameracontroller.camera.settings.video.VideoQuality;
 import net.maxsmr.cameracontroller.camera.settings.video.record.VideoRecordLimit;
 import net.maxsmr.cameracontroller.camera.settings.video.record.VideoSettings;
+import net.maxsmr.tasksutils.taskexecutor.TaskRunnableExecutor;
 
 import static net.maxsmr.cameracontroller.camera.settings.photo.CameraSettings.DEFAULT_IMAGE_FORMAT;
 import static net.maxsmr.cameracontroller.camera.settings.photo.CameraSettings.DEFAULT_PREVIEW_FORMAT;
@@ -121,7 +121,7 @@ public class CameraController {
 
     private final Logger logger;
 
-    private final IdsHolder previewIdsHolder = new IdsHolder(0);
+    private final IdHolder previewIdsHolder = new IdHolder(0);
 
     private CameraSurfaceHolderCallback cameraSurfaceHolderCallback;
 
@@ -174,13 +174,13 @@ public class CameraController {
     /**
      * used for storing and running runnables to save preview for given video
      */
-    private MakePreviewThreadPoolExecutor makePreviewThreadPoolExecutor;
+    private TaskRunnableExecutor<MakePreviewRunnableInfo, MakePreviewRunnable> makePreviewThreadPoolExecutor;
 
     public CameraController(@NonNull Context context, @Nullable Logger logger, boolean enableFpsLogging) {
         this.context = context;
         this.logger = logger != null ? logger : new Logger.Stub();
         enableFpsLogging(enableFpsLogging);
-        initMakePreviewThreadPoolExecutor(false, null); // TODO доработать executor
+        initMakePreviewThreadPoolExecutor(); // TODO доработать executor
     }
 
     public void releaseCameraController() {
@@ -692,7 +692,7 @@ public class CameraController {
         this.lastLocation = loc;
     }
 
-    private boolean createCamera(int cameraId, SurfaceView surfaceView, CameraSettings cameraSettings) {
+    private boolean createCamera(int cameraId, @NonNull SurfaceView surfaceView, @Nullable CameraSettings cameraSettings) {
 
         synchronized (sync) {
 
@@ -703,11 +703,6 @@ public class CameraController {
 
             if (!isCameraIdValid(cameraId)) {
                 logger.error("incorrect camera id: " + cameraId);
-                return false;
-            }
-
-            if (surfaceView == null) {
-                logger.error("surfaceView is null");
                 return false;
             }
 
@@ -807,7 +802,7 @@ public class CameraController {
 
     @Nullable
     public Camera getOpenedCameraInstance() {
-        return isCameraOpened() && isCameraLocked() && isMediaRecorderRecording? camera : null;
+        return isCameraOpened() && isCameraLocked() && !isMediaRecorderRecording ? camera : null;
     }
 
     public int getOpenedCameraId() {
@@ -918,7 +913,10 @@ public class CameraController {
             result = stopPreview();
         }
         if (result) {
-            return startPreview();
+            result = startPreview();
+            if (result) {
+                setPreviewCallback();
+            }
         }
         return result;
     }
@@ -927,7 +925,7 @@ public class CameraController {
      * for the first time must be called at onCreate() or onResume() handling surfaceCreated(), surfaceChanged() and
      * surfaceDestroyed() callbacks
      */
-    public boolean openCamera(int cameraId, SurfaceView surfaceView, CameraSettings cameraSettings) {
+    public boolean openCamera(int cameraId, @NonNull SurfaceView surfaceView, @Nullable CameraSettings cameraSettings) {
         logger.debug("openCamera(), cameraId=" + cameraId + ", setMaxFps=" + cameraSettings);
 
         if (isCameraThreadRunning()) {
@@ -1389,10 +1387,14 @@ public class CameraController {
      *
      * @param cameraSettings incorrect parameters will be replaced with actual
      */
-    public boolean setCameraSettings(@NonNull CameraSettings cameraSettings) {
+    public boolean setCameraSettings(CameraSettings cameraSettings) {
         logger.debug("setCameraSettings(), cameraSettings=" + cameraSettings);
 
         synchronized (sync) {
+
+            if (cameraSettings == null) {
+                return false;
+            }
 
             if (!isCameraLocked()) {
                 logger.error("can't get parameters: camera is not locked");
@@ -1657,11 +1659,10 @@ public class CameraController {
             }
 
             if (isPreviewFormatChanged || isPreviewFpsRangeChanged) {
-                previewCallback.updatePreviewFormat(cameraSettings.getPreviewFormat());
+                previewCallback.updatePreviewFormat(previewFormat);
                 if (isPreviewStated) {
                     // restart preview and reset callback
                     restartPreview();
-                    setPreviewCallback();
                 }
             }
 
@@ -2465,13 +2466,13 @@ public class CameraController {
         }
     }
 
-    public void initMakePreviewThreadPoolExecutor(boolean syncWorkQueue, String workQueuesPath) {
-        logger.debug("initMakePreviewThreadPoolExecutor(), syncWorkQueue=" + syncWorkQueue + ", workQueuesPath=" + workQueuesPath);
+    public void initMakePreviewThreadPoolExecutor() {
+        logger.debug("initMakePreviewThreadPoolExecutor()");
 
         releaseMakePreviewThreadPoolExecutor();
 
-        makePreviewThreadPoolExecutor = new MakePreviewThreadPoolExecutor(this, MAKE_PREVIEW_POOL_SIZE, syncWorkQueue,
-                workQueuesPath != null ? workQueuesPath + File.separator + "make_preview" : null, logger);
+        makePreviewThreadPoolExecutor = new TaskRunnableExecutor<>(MAKE_PREVIEW_POOL_SIZE, 1, TaskRunnableExecutor.DEFAULT_KEEP_ALIVE_TIME, TimeUnit.SECONDS, "MakePreviewThread",
+                null, null, null, null);
     }
 
     public void releaseMakePreviewThreadPoolExecutor() {
@@ -2685,14 +2686,18 @@ public class CameraController {
     private class CameraThread extends CustomHandlerThread {
 
         private final int cameraId;
+        @NonNull
         private final SurfaceView surfaceView;
+        @Nullable
         private final CameraSettings cameraSettings;
         @Nullable
         private final CountDownLatch latch;
 
         private boolean openResult = false;
 
-        CameraThread(final int cameraId, final SurfaceView surfaceView, CameraSettings cameraSettings, @Nullable final CountDownLatch latch) {
+        private CreateCameraRunnable runnable;
+
+        CameraThread(final int cameraId, @NonNull final SurfaceView surfaceView, @Nullable CameraSettings cameraSettings, @Nullable final CountDownLatch latch) {
             super(CameraThread.class.getSimpleName());
             this.cameraId = cameraId;
             this.surfaceView = surfaceView;
@@ -2700,22 +2705,36 @@ public class CameraController {
             this.latch = latch;
         }
 
-        public boolean getOpenResult() {
+        boolean getOpenResult() {
             return openResult;
+        }
+
+        boolean isCreateCameraRunning() {
+            return runnable.getStatus() == AsyncTask.Status.RUNNING;
         }
 
         @Override
         protected void onLooperPrepared() {
             super.onLooperPrepared();
-            addNewTask(new Runnable() {
-                @Override
-                public void run() {
-                    CameraThread.this.openResult = createCamera(cameraId, surfaceView, cameraSettings);
-                    if (latch != null) {
-                        latch.countDown();
-                    }
-                }
-            }, 0);
+            addTask(runnable = new CreateCameraRunnable(this));
+        }
+    }
+
+    private class CreateCameraRunnable extends HandlerRunnable<Boolean> {
+
+        final CameraThread cameraThread;
+
+        public CreateCameraRunnable(CameraThread cameraThread) {
+            this.cameraThread = cameraThread;
+        }
+
+        @Override
+        protected Boolean doWork() {
+            cameraThread.openResult = createCamera(cameraThread.cameraId, cameraThread.surfaceView, cameraThread.cameraSettings);
+            if (cameraThread.latch != null) {
+                cameraThread.latch.countDown();
+            }
+            return null;
         }
     }
 
