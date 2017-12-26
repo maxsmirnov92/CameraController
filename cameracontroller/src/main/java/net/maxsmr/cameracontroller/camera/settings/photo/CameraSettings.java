@@ -31,12 +31,6 @@ public class CameraSettings implements Serializable {
 
     public static final boolean DEFAULT_ENABLE_VIDEO_STABILIZATION = true;
 
-    public static final int ZOOM_NOT_SPECIFIED = -1;
-
-    public static final int ZOOM_MIN = 0;
-
-    public static final int ZOOM_MAX = -1;
-
     private ImageFormat previewFormat = DEFAULT_PREVIEW_FORMAT;
 
     private ImageFormat pictureFormat = DEFAULT_IMAGE_FORMAT;
@@ -57,22 +51,20 @@ public class CameraSettings implements Serializable {
 
     private int previewFrameRate = DEFAULT_PREVIEW_FRAME_RATE;
 
-    private int zoom = ZOOM_MIN;
-
     /** default */
     public CameraSettings(ImageFormat previewFormat, ImageFormat pictureFormat,
                           Size pictureSize, int jpegQuality,
                           FlashMode flashMode, FocusMode focusMode, ColorEffect effect,
-                          boolean enableVideoStabilization, int previewFrameRate, int zoom) {
+                          boolean enableVideoStabilization, int previewFrameRate) {
         this(previewFormat, pictureFormat, pictureSize.width, pictureSize.height, jpegQuality,
                 flashMode, focusMode, effect,
-                enableVideoStabilization, previewFrameRate, zoom);
+                enableVideoStabilization, previewFrameRate);
     }
 
     public CameraSettings(ImageFormat previewFormat, ImageFormat pictureFormat,
                           int pictureWidth, int pictureHeight, int jpegQuality,
                           FlashMode flashMode, FocusMode focusMode, ColorEffect effect,
-                          boolean enableVideoStabilization, int previewFrameRate, int zoom) {
+                          boolean enableVideoStabilization, int previewFrameRate) {
 
         setPreviewFormat(previewFormat);
         setPictureFormat(pictureFormat);
@@ -86,7 +78,6 @@ public class CameraSettings implements Serializable {
         enableVideoStabilization(enableVideoStabilization);
 
         setPreviewFrameRate(previewFrameRate);
-        setZoom(zoom);
     }
 
     public ImageFormat getPreviewFormat() {
@@ -191,15 +182,4 @@ public class CameraSettings implements Serializable {
         return false;
     }
 
-    public int getZoom() {
-        return zoom;
-    }
-
-    public boolean setZoom(int zoom) {
-        if (zoom > 0 || zoom == ZOOM_NOT_SPECIFIED) {
-            this.zoom = zoom;
-            return true;
-        }
-        return false;
-    }
 }
