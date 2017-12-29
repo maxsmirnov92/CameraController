@@ -25,9 +25,9 @@ import android.os.Build;
 import android.os.Handler;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
+import android.support.v4.util.Pair;
 import android.text.TextUtils;
 import android.util.DisplayMetrics;
-import android.util.Pair;
 import android.view.Surface;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
@@ -1482,10 +1482,10 @@ public class CameraController {
                 return false;
             }
 
-            if (isMediaRecorderRecording) {
-                logger.error("can't set parameters: media recorder is recording");
-                return false;
-            }
+//            if (isMediaRecorderRecording) {
+//                logger.error("can't set parameters: media recorder is recording");
+//                return false;
+//            }
 
             final Parameters params;
             try {
@@ -1732,191 +1732,207 @@ public class CameraController {
         }
     }
 
-    public static boolean toggleFlash(@NonNull Context context, CameraController cameraController, boolean toggle) {
+    public boolean toggleFlash(@NonNull Context context, boolean toggle) {
 
-        Camera camera = cameraController != null? cameraController.getOpenedCameraInstance() : null;
+        synchronized (sync) {
 
-        if (camera == null) {
+            if (!isCameraLocked()) {
+                logger.error("can't get parameters: camera is not locked");
+                return false;
+            }
+
+            if (context.getPackageManager().hasSystemFeature(PackageManager.FEATURE_CAMERA_FLASH)) {
+
+
+                Camera.Parameters params = null;
+
+                try {
+                    params = camera.getParameters();
+                } catch (RuntimeException e) {
+                    logger.error("a RuntimeException occurred during getParameters()", e);
+                    return false;
+                }
+
+                if (params != null) {
+                    params.setFlashMode(toggle ? FlashMode.TORCH.getValue() : FlashMode.AUTO.getValue());
+                }
+
+                try {
+                    camera.setParameters(params);
+                } catch (RuntimeException e) {
+                    logger.error("a RuntimeException occurred during setParameters()", e);
+                    return false;
+                }
+
+                return true;
+            }
+
             return false;
         }
+    }
 
-        boolean result = false;
+    private static boolean isExposureCompensationSupported(Pair<Integer, Integer> range) {
+        return range != null && !(range.first == 0 && range.second == 0);
+    }
 
-        if (context.getPackageManager().hasSystemFeature(PackageManager.FEATURE_CAMERA_FLASH)) {
+    public boolean isExposureCompensationSupported() {
+        return isExposureCompensationSupported(getMinMaxExposureCompensation());
+    }
 
-            result = true;
+    @Nullable
+    public Pair<Integer, Integer> getMinMaxExposureCompensation() {
 
-            Camera.Parameters params = null;
+        synchronized (sync) {
+
+            if (!isCameraLocked()) {
+                logger.error("can't get parameters: camera is not locked");
+                return null;
+            }
+
+            final Camera.Parameters params;
 
             try {
                 params = camera.getParameters();
             } catch (RuntimeException e) {
-                e.printStackTrace();
-                result = false;
+                logger.error("a RuntimeException occurred during getParameters()", e);
+                return null;
             }
 
-            if (params != null) {
-                params.setFlashMode(toggle? FlashMode.TORCH.getValue() : FlashMode.AUTO.getValue());
+            return new Pair<>(params.getMinExposureCompensation(), params.getMaxExposureCompensation());
+        }
+    }
+
+    public int getExposureCompensation() {
+
+        synchronized (sync) {
+
+            if (!isCameraLocked()) {
+                logger.error("can't get parameters: camera is not locked");
+                return 0;
             }
+
+            final Camera.Parameters params;
+
+            try {
+                params = camera.getParameters();
+            } catch (RuntimeException e) {
+                logger.error("a RuntimeException occurred during getParameters()", e);
+                return 0;
+            }
+
+            return params.getExposureCompensation();
+        }
+    }
+
+    public boolean setExposureCompensation(int value) {
+
+        synchronized (sync) {
+
+            if (!isCameraLocked()) {
+                logger.error("can't get parameters: camera is not locked");
+                return false;
+            }
+
+
+            final Camera.Parameters params;
+
+            try {
+                params = camera.getParameters();
+            } catch (RuntimeException e) {
+                logger.error("a RuntimeException occurred during getParameters()", e);
+                return false;
+            }
+
+            Pair<Integer, Integer> range = getMinMaxExposureCompensation();
+
+            if (!isExposureCompensationSupported(range)) {
+                return false;
+            }
+
+            if (value < range.first || value > range.second) {
+                return false;
+            }
+
+            params.setExposureCompensation(value);
 
             try {
                 camera.setParameters(params);
             } catch (RuntimeException e) {
-                e.printStackTrace();
-                result = false;
+                logger.error("a RuntimeException occurred during setParameters()", e);
+                return false;
             }
-
-        }
-        return result;
-    }
-
-    private static boolean isExposureCompensationSupported(android.support.v4.util.Pair<Integer, Integer> range) {
-        return range != null && !(range.first == 0 && range.second == 0);
-    }
-
-    public static boolean isExposureCompensationSupported(CameraController cameraController) {
-        return isExposureCompensationSupported(getMinMaxExposureCompensation(cameraController));
-    }
-
-    @Nullable
-    public static android.support.v4.util.Pair<Integer, Integer> getMinMaxExposureCompensation(CameraController cameraController) {
-
-        Camera camera = cameraController != null? cameraController.getOpenedCameraInstance() : null;
-
-        if (camera == null) {
-            return null;
-        }
-
-        final Camera.Parameters params;
-
-        try {
-            params = camera.getParameters();
-        } catch (RuntimeException e) {
-            e.printStackTrace();
-            return null;
-        }
-
-        return new android.support.v4.util.Pair<>(params.getMinExposureCompensation(), params.getMaxExposureCompensation());
-    }
-
-    public static int getExposureCompensation(CameraController cameraController) {
-
-        Camera camera = cameraController != null? cameraController.getOpenedCameraInstance() : null;
-
-        if (camera == null) {
-            return 0;
-        }
-
-        final Camera.Parameters params;
-
-        try {
-            params = camera.getParameters();
-        } catch (RuntimeException e) {
-            e.printStackTrace();
-            return 0;
-        }
-
-        return params.getExposureCompensation();
-    }
-
-    public static boolean setExposureCompensation(CameraController cameraController, int value) {
-
-        Camera camera = cameraController != null? cameraController.getOpenedCameraInstance() : null;
-
-        if (camera == null) {
-            return false;
-        }
-
-        final Camera.Parameters params;
-
-        try {
-            params = camera.getParameters();
-        } catch (RuntimeException e) {
-            e.printStackTrace();
-            return false;
-        }
-
-        android.support.v4.util.Pair<Integer, Integer> range = getMinMaxExposureCompensation(cameraController);
-
-        if (!isExposureCompensationSupported(range)) {
-            return false;
-        }
-
-        if (value < range.first || value > range.second) {
-            return false;
-        }
-
-        params.setExposureCompensation(value);
-
-        try {
-            camera.setParameters(params);
-        } catch (RuntimeException e) {
-            return false;
-        }
 
 //        cameraController.restartPreview();
 
-        return true;
+            return true;
+        }
     }
 
     @NonNull
-    public static android.support.v4.util.Pair<WhiteBalance, WhiteBalance> getMinMaxWhiteBalance() {
-        return new android.support.v4.util.Pair<>(WhiteBalance.getValue(true), WhiteBalance.getValue(false));
+    public static Pair<WhiteBalance, WhiteBalance> getMinMaxWhiteBalance() {
+        return new Pair<>(WhiteBalance.getValue(true), WhiteBalance.getValue(false));
     }
 
     @NonNull
-    public static android.support.v4.util.Pair<Integer, Integer> getMinMaxWhiteBalanceId() {
-        android.support.v4.util.Pair<WhiteBalance, WhiteBalance> pair = getMinMaxWhiteBalance();
-        return new android.support.v4.util.Pair<>(pair.first.getId(), pair.second.getId());
+    public static Pair<Integer, Integer> getMinMaxWhiteBalanceId() {
+        Pair<WhiteBalance, WhiteBalance> pair = getMinMaxWhiteBalance();
+        return new Pair<>(pair.first.getId(), pair.second.getId());
     }
 
     @Nullable
-    public static WhiteBalance getWhiteBalance(CameraController cameraController) {
+    public WhiteBalance getWhiteBalance() {
 
-        Camera camera = cameraController != null? cameraController.getOpenedCameraInstance() : null;
+        synchronized (sync) {
 
-        if (camera == null) {
-            return null;
+            if (!isCameraLocked()) {
+                logger.error("can't get parameters: camera is not locked");
+                return null;
+            }
+
+
+            final Camera.Parameters params;
+
+            try {
+                params = camera.getParameters();
+            } catch (RuntimeException e) {
+                logger.error("a RuntimeException occurred during getParameters()", e);
+                return null;
+            }
+
+            return WhiteBalance.fromValue(params.getWhiteBalance());
         }
-
-        final Camera.Parameters params;
-
-        try {
-            params = camera.getParameters();
-        } catch (RuntimeException e) {
-            e.printStackTrace();
-            return null;
-        }
-
-        return WhiteBalance.fromValue(params.getWhiteBalance());
     }
 
-    public static boolean setWhiteBalance(CameraController cameraController, WhiteBalance whiteBalance) {
+    public boolean setWhiteBalance(WhiteBalance whiteBalance) {
 
-        Camera camera = cameraController != null ? cameraController.getOpenedCameraInstance() : null;
+        synchronized (sync) {
 
-        if (camera == null) {
-            return false;
+            if (!isCameraLocked()) {
+                logger.error("can't get parameters: camera is not locked");
+                return false;
+            }
+
+
+            final Camera.Parameters params;
+
+            try {
+                params = camera.getParameters();
+            } catch (RuntimeException e) {
+                logger.error("a RuntimeException occurred during getParameters()", e);
+                return false;
+            }
+
+            params.setWhiteBalance(whiteBalance.getValue());
+
+            try {
+                camera.setParameters(params);
+            } catch (RuntimeException e) {
+                logger.error("a RuntimeException occurred during setParameters()", e);
+                return false;
+            }
+
+            return true;
         }
-
-        final Camera.Parameters params;
-
-        try {
-            params = camera.getParameters();
-        } catch (RuntimeException e) {
-            e.printStackTrace();
-            return false;
-        }
-
-        params.setWhiteBalance(whiteBalance.getValue());
-
-        try {
-            camera.setParameters(params);
-        } catch (RuntimeException e) {
-            return false;
-        }
-
-        return true;
     }
 
     public int getMaxZoom() {
@@ -1934,7 +1950,7 @@ public class CameraController {
                 return ZOOM_NOT_SPECIFIED;
             }
 
-            return params.isZoomSupported()? params.getMaxZoom() : ZOOM_NOT_SPECIFIED;
+            return params.isZoomSupported() ? params.getMaxZoom() : ZOOM_NOT_SPECIFIED;
         }
     }
 
@@ -1954,7 +1970,7 @@ public class CameraController {
                 return ZOOM_NOT_SPECIFIED;
             }
 
-            return params.isZoomSupported()? params.getZoom() : ZOOM_NOT_SPECIFIED;
+            return params.isZoomSupported() ? params.getZoom() : ZOOM_NOT_SPECIFIED;
         }
     }
 
