@@ -54,26 +54,19 @@ public class CameraSettings implements Serializable {
     /** default */
     public CameraSettings(ImageFormat previewFormat, ImageFormat pictureFormat,
                           Size pictureSize, int jpegQuality,
-                          FlashMode flashMode, FocusMode focusMode, ColorEffect effect,
                           boolean enableVideoStabilization, int previewFrameRate) {
         this(previewFormat, pictureFormat, pictureSize.width, pictureSize.height, jpegQuality,
-                flashMode, focusMode, effect,
                 enableVideoStabilization, previewFrameRate);
     }
 
     public CameraSettings(ImageFormat previewFormat, ImageFormat pictureFormat,
                           int pictureWidth, int pictureHeight, int jpegQuality,
-                          FlashMode flashMode, FocusMode focusMode, ColorEffect effect,
                           boolean enableVideoStabilization, int previewFrameRate) {
 
         setPreviewFormat(previewFormat);
         setPictureFormat(pictureFormat);
         setPictureSize(pictureWidth, pictureHeight);
         setJpegQuality(jpegQuality);
-
-        setFlashMode(flashMode);
-        setFocusMode(focusMode);
-        setColorEffect(effect);
 
         enableVideoStabilization(enableVideoStabilization);
 
@@ -138,29 +131,6 @@ public class CameraSettings implements Serializable {
             return false;
     }
 
-    public FlashMode getFlashMode() {
-        return flashMode;
-    }
-
-    public void setFlashMode(FlashMode flashMode) {
-        this.flashMode = flashMode;
-    }
-
-    public FocusMode getFocusMode() {
-        return focusMode;
-    }
-
-    public void setFocusMode(FocusMode focusMode) {
-        this.focusMode = focusMode;
-    }
-
-    public ColorEffect getColorEffect() {
-        return colorEffect;
-    }
-
-    public void setColorEffect(ColorEffect effect) {
-        this.colorEffect = effect;
-    }
 
     public boolean isVideoStabilizationEnabled() {
         return enableVideoStabilization;
