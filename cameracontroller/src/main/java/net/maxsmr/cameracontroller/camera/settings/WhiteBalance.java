@@ -1,35 +1,31 @@
 package net.maxsmr.cameracontroller.camera.settings;
 
+import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 
 import net.maxsmr.commonutils.data.CompareUtils;
 
 import java.lang.reflect.Field;
 
-public enum ColorEffect {
+public enum  WhiteBalance {
 
-    NONE(0, "EFFECT_NONE"),
-
-    MONOCHROME(1, "EFFECT_MONO"),
-
-    NEGATIVE(2, "EFFECT_NEGATIVE"),
-
-    POSTERIZE(3, "EFFECT_POSTERIZE"),
-
-    SEPIA(4, "EFFECT_SEPIA"),
-
-    SOLARIZE(5, "EFFECT_SOLARIZE"),
-
-    WHITEBOARD(6, "EFFECT_WHITEBOARD");
-
-    ColorEffect(int id, String constValue) {
-        this.id = id;
-        this.constantValue = constValue;
-    }
+    AUTO("WHITE_BALANCE_AUTO", 0),
+    INCANDESCENT("WHITE_BALANCE_INCANDESCENT", 1),
+    FLUORESCENT("WHITE_BALANCE_FLUORESCENT", 2),
+    WARM_FLUORESCENT("WHITE_BALANCE_WARM_FLUORESCENT", 3),
+    DAYLIGHT("WHITE_BALANCE_DAYLIGHT", 4),
+    CLOUDY_DAYLIGHT("WHITE_BALANCE_CLOUDY_DAYLIGHT", 5),
+    TWILIGHT("WHITE_BALANCE_TWILIGHT", 6),
+    SHADE("WHITE_BALANCE_SHADE", 7);
 
     private static final String constantClassName = "android.hardware.Camera$Parameters";
     private final String constantValue;
     private final int id;
+
+    WhiteBalance(String constantValue, int id) {
+        this.constantValue = constantValue;
+        this.id = id;
+    }
 
     @SuppressWarnings("rawtypes")
     private static Class constClass = null;
@@ -71,13 +67,14 @@ public enum ColorEffect {
         return null;
     }
 
-    @Nullable
-    public static ColorEffect fromId(int id) {
-        ColorEffect result = null;
-        for (ColorEffect colorEffect : ColorEffect.values()) {
-            if (id == colorEffect.getId()) {
-                result = colorEffect;
-                break;
+    @NonNull
+    public static WhiteBalance getValue(boolean min) {
+        WhiteBalance result = WhiteBalance.AUTO;
+        for (WhiteBalance v : WhiteBalance.values()) {
+            if (min && v.getId() < result.getId()) {
+                result = v;
+            } else if (!min && v.getId() > result.getId()) {
+                result = v;
             }
         }
         return result;
@@ -85,11 +82,23 @@ public enum ColorEffect {
 
 
     @Nullable
-    public static ColorEffect fromValue(String value) {
-        ColorEffect result = null;
-        for (ColorEffect colorEffect : ColorEffect.values()) {
-            if (CompareUtils.stringsEqual(value, colorEffect.getValue(), false)) {
-                result = colorEffect;
+    public static WhiteBalance fromId(int id) {
+        WhiteBalance result = null;
+        for (WhiteBalance whiteBalance : WhiteBalance.values()) {
+            if (id == whiteBalance.getId()) {
+                result = whiteBalance;
+                break;
+            }
+        }
+        return result;
+    }
+
+    @Nullable
+    public static WhiteBalance fromValue(String value) {
+        WhiteBalance result = null;
+        for (WhiteBalance whiteBalance : WhiteBalance.values()) {
+            if (CompareUtils.stringsEqual(value, whiteBalance.getValue(), false)) {
+                result = whiteBalance;
                 break;
             }
         }

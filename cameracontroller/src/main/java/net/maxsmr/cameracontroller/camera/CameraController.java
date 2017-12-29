@@ -1,6 +1,7 @@
 package net.maxsmr.cameracontroller.camera;
 
 import android.content.Context;
+import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.Matrix;
 import android.graphics.RectF;
@@ -33,6 +34,7 @@ import android.view.SurfaceView;
 import android.view.ViewGroup.LayoutParams;
 import android.view.WindowManager;
 
+import net.maxsmr.cameracontroller.camera.settings.WhiteBalance;
 import net.maxsmr.cameracontroller.frame.FrameCalculator;
 import net.maxsmr.cameracontroller.frame.stats.IFrameStatsListener;
 import net.maxsmr.cameracontroller.logger.base.Logger;
@@ -759,7 +761,7 @@ public class CameraController {
     }
 
     public void updateLastLocation(Location loc) {
-        this.lastLocation = loc;
+        lastLocation = loc;
     }
 
     private boolean createCamera(int cameraId, @NonNull SurfaceView surfaceView, @Nullable CameraSettings cameraSettings) {
@@ -1728,6 +1730,193 @@ public class CameraController {
 
             return true;
         }
+    }
+
+    public static boolean toggleFlash(@NonNull Context context, CameraController cameraController, boolean toggle) {
+
+        Camera camera = cameraController != null? cameraController.getOpenedCameraInstance() : null;
+
+        if (camera == null) {
+            return false;
+        }
+
+        boolean result = false;
+
+        if (context.getPackageManager().hasSystemFeature(PackageManager.FEATURE_CAMERA_FLASH)) {
+
+            result = true;
+
+            Camera.Parameters params = null;
+
+            try {
+                params = camera.getParameters();
+            } catch (RuntimeException e) {
+                e.printStackTrace();
+                result = false;
+            }
+
+            if (params != null) {
+                params.setFlashMode(toggle? FlashMode.TORCH.getValue() : FlashMode.AUTO.getValue());
+            }
+
+            try {
+                camera.setParameters(params);
+            } catch (RuntimeException e) {
+                e.printStackTrace();
+                result = false;
+            }
+
+        }
+        return result;
+    }
+
+    private static boolean isExposureCompensationSupported(android.support.v4.util.Pair<Integer, Integer> range) {
+        return range != null && !(range.first == 0 && range.second == 0);
+    }
+
+    public static boolean isExposureCompensationSupported(CameraController cameraController) {
+        return isExposureCompensationSupported(getMinMaxExposureCompensation(cameraController));
+    }
+
+    @Nullable
+    public static android.support.v4.util.Pair<Integer, Integer> getMinMaxExposureCompensation(CameraController cameraController) {
+
+        Camera camera = cameraController != null? cameraController.getOpenedCameraInstance() : null;
+
+        if (camera == null) {
+            return null;
+        }
+
+        final Camera.Parameters params;
+
+        try {
+            params = camera.getParameters();
+        } catch (RuntimeException e) {
+            e.printStackTrace();
+            return null;
+        }
+
+        return new android.support.v4.util.Pair<>(params.getMinExposureCompensation(), params.getMaxExposureCompensation());
+    }
+
+    public static int getExposureCompensation(CameraController cameraController) {
+
+        Camera camera = cameraController != null? cameraController.getOpenedCameraInstance() : null;
+
+        if (camera == null) {
+            return 0;
+        }
+
+        final Camera.Parameters params;
+
+        try {
+            params = camera.getParameters();
+        } catch (RuntimeException e) {
+            e.printStackTrace();
+            return 0;
+        }
+
+        return params.getExposureCompensation();
+    }
+
+    public static boolean setExposureCompensation(CameraController cameraController, int value) {
+
+        Camera camera = cameraController != null? cameraController.getOpenedCameraInstance() : null;
+
+        if (camera == null) {
+            return false;
+        }
+
+        final Camera.Parameters params;
+
+        try {
+            params = camera.getParameters();
+        } catch (RuntimeException e) {
+            e.printStackTrace();
+            return false;
+        }
+
+        android.support.v4.util.Pair<Integer, Integer> range = getMinMaxExposureCompensation(cameraController);
+
+        if (!isExposureCompensationSupported(range)) {
+            return false;
+        }
+
+        if (value < range.first || value > range.second) {
+            return false;
+        }
+
+        params.setExposureCompensation(value);
+
+        try {
+            camera.setParameters(params);
+        } catch (RuntimeException e) {
+            return false;
+        }
+
+//        cameraController.restartPreview();
+
+        return true;
+    }
+
+    @NonNull
+    public static android.support.v4.util.Pair<WhiteBalance, WhiteBalance> getMinMaxWhiteBalance() {
+        return new android.support.v4.util.Pair<>(WhiteBalance.getValue(true), WhiteBalance.getValue(false));
+    }
+
+    @NonNull
+    public static android.support.v4.util.Pair<Integer, Integer> getMinMaxWhiteBalanceId() {
+        android.support.v4.util.Pair<WhiteBalance, WhiteBalance> pair = getMinMaxWhiteBalance();
+        return new android.support.v4.util.Pair<>(pair.first.getId(), pair.second.getId());
+    }
+
+    @Nullable
+    public static WhiteBalance getWhiteBalance(CameraController cameraController) {
+
+        Camera camera = cameraController != null? cameraController.getOpenedCameraInstance() : null;
+
+        if (camera == null) {
+            return null;
+        }
+
+        final Camera.Parameters params;
+
+        try {
+            params = camera.getParameters();
+        } catch (RuntimeException e) {
+            e.printStackTrace();
+            return null;
+        }
+
+        return WhiteBalance.fromValue(params.getWhiteBalance());
+    }
+
+    public static boolean setWhiteBalance(CameraController cameraController, WhiteBalance whiteBalance) {
+
+        Camera camera = cameraController != null ? cameraController.getOpenedCameraInstance() : null;
+
+        if (camera == null) {
+            return false;
+        }
+
+        final Camera.Parameters params;
+
+        try {
+            params = camera.getParameters();
+        } catch (RuntimeException e) {
+            e.printStackTrace();
+            return false;
+        }
+
+        params.setWhiteBalance(whiteBalance.getValue());
+
+        try {
+            camera.setParameters(params);
+        } catch (RuntimeException e) {
+            return false;
+        }
+
+        return true;
     }
 
     public int getMaxZoom() {

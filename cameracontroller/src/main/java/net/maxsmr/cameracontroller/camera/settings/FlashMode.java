@@ -68,6 +68,18 @@ public enum FlashMode {
 	}
 
 	@Nullable
+	public static FlashMode fromId(int id) {
+		FlashMode result = null;
+		for (FlashMode flashMode : FlashMode.values()) {
+			if (id == flashMode.getId()) {
+				result = flashMode;
+				break;
+			}
+		}
+		return result;
+	}
+
+	@Nullable
 	public static FlashMode fromValue(String value) {
 		FlashMode result = null;
 		for (FlashMode flashMode : FlashMode.values()) {

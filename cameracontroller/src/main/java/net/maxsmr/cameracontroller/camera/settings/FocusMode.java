@@ -72,6 +72,19 @@ public enum FocusMode {
     }
 
     @Nullable
+    public static FocusMode fromId(int id) {
+        FocusMode result = null;
+        for (FocusMode focusMode : FocusMode.values()) {
+            if (id == focusMode.getId()) {
+                result = focusMode;
+                break;
+            }
+        }
+        return result;
+    }
+
+
+    @Nullable
     public static FocusMode fromValue(String value) {
         FocusMode result = null;
         for (FocusMode focusMode : FocusMode.values()) {
