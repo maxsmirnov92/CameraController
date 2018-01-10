@@ -5,20 +5,22 @@ import android.os.Looper;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 
+import net.maxsmr.cameracontroller.frame.stats.FrameStats;
+import net.maxsmr.cameracontroller.frame.stats.IFrameStatsListener;
 import net.maxsmr.cameracontroller.logger.base.Logger;
 import net.maxsmr.commonutils.data.MathUtils;
+import net.maxsmr.commonutils.data.Observable;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-import net.maxsmr.cameracontroller.frame.stats.FrameStats;
-import net.maxsmr.cameracontroller.frame.stats.IFrameStatsListener;
-import net.maxsmr.commonutils.data.Observable;
-
 public class FrameCalculator implements IPreviewFrameCallback {
 
     public static final long DEFAULT_NOTIFY_INTERVAL = 1000;
+
+    private static Logger mFrameLogger;
 
     private final Object mSync = new Object();
 
@@ -65,11 +67,12 @@ public class FrameCalculator implements IPreviewFrameCallback {
     private float mTotalFrameTimeSum;
     private int mTotalFrameTimesCount = 0;
 
-    private Logger mFrameLogger;
+    public FrameCalculator() {
+        this(Looper.getMainLooper());
+    }
 
-    public FrameCalculator(Logger logger) {
-        mNotifyHandler = new Handler(Looper.getMainLooper());
-        setFrameLogger(logger);
+    public FrameCalculator(@NonNull Looper notifyLooper) {
+        mNotifyHandler = new Handler(notifyLooper);
     }
 
     @NonNull
@@ -98,13 +101,6 @@ public class FrameCalculator implements IPreviewFrameCallback {
         mNotifyHandler = notifyHandler;
     }
 
-    public void setFrameLogger(Logger frameLogger) {
-        mFrameLogger = frameLogger;
-        if (mFrameLogger == null) {
-            mFrameLogger = new Logger.Stub();
-        }
-    }
-
     @Nullable
     public FrameStats getLastStats() {
         return mLastStats;
@@ -126,6 +122,7 @@ public class FrameCalculator implements IPreviewFrameCallback {
     public void notifyPreviewFinished() {
         synchronized (mSync) {
             stopExec();
+            mStartPreviewTime = 0;
             mPreviewStarted = false;
         }
     }
@@ -211,6 +208,13 @@ public class FrameCalculator implements IPreviewFrameCallback {
         }
     }
 
+    public static void setFrameLogger(Logger frameLogger) {
+        mFrameLogger = frameLogger;
+        if (mFrameLogger == null) {
+            mFrameLogger = new Logger.Stub();
+        }
+    }
+
     protected class FrameLogRunnable implements Runnable {
 
         /**
@@ -232,7 +236,8 @@ public class FrameCalculator implements IPreviewFrameCallback {
         public void run() {
 
             if (mEventTime < mStartIntervalTime) {
-                throw new IllegalArgumentException("happen time < start interval time");
+                mFrameLogger.error("event time < start interval time");
+                return;
             }
 
             if (mLastFrameTime != 0 && mLastFrameTime < mEventTime) {

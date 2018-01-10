@@ -1,7 +1,6 @@
 package net.maxsmr.cameracontroller.camera;
 
 import android.content.Context;
-import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.Matrix;
 import android.graphics.RectF;
@@ -12,6 +11,7 @@ import android.hardware.Camera.ErrorCallback;
 import android.hardware.Camera.Parameters;
 import android.hardware.Camera.ShutterCallback;
 import android.hardware.Camera.Size;
+import android.hardware.SensorManager;
 import android.location.Location;
 import android.media.AudioManager;
 import android.media.CamcorderProfile;
@@ -23,6 +23,7 @@ import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Handler;
+import android.os.Looper;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.support.v4.util.Pair;
@@ -34,7 +35,17 @@ import android.view.SurfaceView;
 import android.view.ViewGroup.LayoutParams;
 import android.view.WindowManager;
 
+import net.maxsmr.cameracontroller.camera.settings.ColorEffect;
+import net.maxsmr.cameracontroller.camera.settings.FlashMode;
+import net.maxsmr.cameracontroller.camera.settings.FocusMode;
 import net.maxsmr.cameracontroller.camera.settings.WhiteBalance;
+import net.maxsmr.cameracontroller.camera.settings.photo.CameraSettings;
+import net.maxsmr.cameracontroller.camera.settings.photo.ImageFormat;
+import net.maxsmr.cameracontroller.camera.settings.video.AudioEncoder;
+import net.maxsmr.cameracontroller.camera.settings.video.VideoEncoder;
+import net.maxsmr.cameracontroller.camera.settings.video.VideoQuality;
+import net.maxsmr.cameracontroller.camera.settings.video.record.VideoRecordLimit;
+import net.maxsmr.cameracontroller.camera.settings.video.record.VideoSettings;
 import net.maxsmr.cameracontroller.frame.FrameCalculator;
 import net.maxsmr.cameracontroller.frame.stats.IFrameStatsListener;
 import net.maxsmr.cameracontroller.logger.base.Logger;
@@ -48,7 +59,9 @@ import net.maxsmr.commonutils.graphic.GraphicUtils;
 import net.maxsmr.tasksutils.CustomHandlerThread;
 import net.maxsmr.tasksutils.handler.HandlerRunnable;
 import net.maxsmr.tasksutils.storage.ids.IdHolder;
+import net.maxsmr.tasksutils.storage.sync.AbstractSyncStorage;
 import net.maxsmr.tasksutils.taskexecutor.TaskRunnable;
+import net.maxsmr.tasksutils.taskexecutor.TaskRunnableExecutor;
 
 import java.io.File;
 import java.io.IOException;
@@ -63,18 +76,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
-import net.maxsmr.cameracontroller.camera.settings.ColorEffect;
-import net.maxsmr.cameracontroller.camera.settings.FlashMode;
-import net.maxsmr.cameracontroller.camera.settings.FocusMode;
-import net.maxsmr.cameracontroller.camera.settings.photo.ImageFormat;
-import net.maxsmr.cameracontroller.camera.settings.photo.CameraSettings;
-import net.maxsmr.cameracontroller.camera.settings.video.AudioEncoder;
-import net.maxsmr.cameracontroller.camera.settings.video.VideoEncoder;
-import net.maxsmr.cameracontroller.camera.settings.video.VideoQuality;
-import net.maxsmr.cameracontroller.camera.settings.video.record.VideoRecordLimit;
-import net.maxsmr.cameracontroller.camera.settings.video.record.VideoSettings;
-import net.maxsmr.tasksutils.taskexecutor.TaskRunnableExecutor;
-
+import static net.maxsmr.cameracontroller.camera.OrientationIntervalListener.ROTATION_NOT_SPECIFIED;
 import static net.maxsmr.cameracontroller.camera.settings.photo.CameraSettings.DEFAULT_IMAGE_FORMAT;
 import static net.maxsmr.cameracontroller.camera.settings.photo.CameraSettings.DEFAULT_PREVIEW_FORMAT;
 
@@ -95,7 +97,6 @@ public class CameraController {
     public static final int ZOOM_NOT_SPECIFIED = -2;
 
     private static final float ZOOM_GESTURE_SCALER = 1.5f;
-
     public static final boolean DEFAULT_ENABLE_STORE_LOCATION = true;
 
     public static final boolean DEFAULT_ENABLE_GESTURE_SCALING = true;
@@ -103,6 +104,8 @@ public class CameraController {
     private static final int DEFAULT_MAKE_PREVIEW_POOL_SIZE = 5;
 
     private static final int EXECUTOR_CALL_TIMEOUT = 10;
+
+    private static Logger logger;
 
     private final Object sync = new Object();
 
@@ -122,6 +125,8 @@ public class CameraController {
 
     private final CustomPreviewCallback previewCallback = new CustomPreviewCallback();
 
+    private final PreviewFrameObservable previewFrameListeners = new PreviewFrameObservable();
+
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
 
     private final ShutterCallback shutterCallbackStub = new ShutterCallback() {
@@ -132,11 +137,11 @@ public class CameraController {
         }
     };
 
-    private final Context context;
-
-    private final Logger logger;
-
     private final IdHolder videoPreviewIdsHolder = new IdHolder(0);
+
+    private boolean isReleased = false;
+
+    private Context context;
 
     private int callbackBufferQueueSize = DEFAULT_PREVIEW_CALLBACK_BUFFER_QUEUE_SIZE;
 
@@ -145,6 +150,10 @@ public class CameraController {
     private CameraSurfaceHolderCallback cameraSurfaceHolderCallback;
 
     private SimpleGestureListener surfaceGestureListener;
+
+    private OrientationListener orientationListener;
+
+    private boolean isOrientationListened = false;
 
     private boolean isSurfaceCreated = false;
 
@@ -156,11 +165,14 @@ public class CameraController {
 
     private boolean isPreviewStated = false;
 
+    @Nullable
     private Handler callbackHandler;
 
     private Camera camera;
 
     private int cameraId = CAMERA_ID_NONE;
+
+    private CameraInfo cameraInfo;
 
     private CameraState currentCameraState = CameraState.IDLE;
 
@@ -199,13 +211,25 @@ public class CameraController {
      */
     private TaskRunnableExecutor<MakePreviewRunnableInfo, MakePreviewRunnable> makePreviewThreadPoolExecutor;
 
-    public CameraController(@NonNull Context context, @Nullable Logger logger, boolean enableFpsLogging) {
+    public CameraController(@NonNull Context context, boolean enableFpsLogging) {
         this.context = context;
-        this.logger = logger != null ? logger : new Logger.Stub();
         enableFpsLogging(enableFpsLogging);
+        orientationListener = new OrientationListener(context);
+    }
+
+    public boolean isReleased() {
+        return isReleased;
+    }
+
+    private void checkReleased() {
+        if (isReleased) {
+            throw new IllegalStateException(CameraController.class.getSimpleName() + " is released");
+        }
     }
 
     public void releaseCameraController() {
+
+        checkReleased();
 
         releaseMakePreviewThreadPoolExecutor();
 
@@ -226,6 +250,10 @@ public class CameraController {
         recordLimitReachedListeners.unregisterAll();
 
         videoPreviewListeners.unregisterAll();
+
+        context = null;
+
+        isReleased = true;
     }
 
     public Observable<SurfaceHolder.Callback> getSurfaceHolderCallbacks() {
@@ -254,6 +282,10 @@ public class CameraController {
 
     public Observable<IVideoPreviewListener> getVideoPreviewListeners() {
         return videoPreviewListeners;
+    }
+
+    public Observable<IPreviewFrameListener> getPreviewFrameListeners() {
+        return previewFrameListeners;
     }
 
     public Observable<IFrameStatsListener> getFrameStatsListeners() {
@@ -317,47 +349,6 @@ public class CameraController {
 
     public void enableGestureScaling(boolean enable) {
         enableGestureScaling = enable;
-    }
-
-    public static Size findLowSize(List<Size> sizeList) {
-
-        if (sizeList == null || sizeList.isEmpty()) {
-            return null;
-        }
-
-        Size lowSize = sizeList.get(0);
-        for (Size size : sizeList) {
-            if (size.width < lowSize.width) {
-                lowSize = size;
-            }
-        }
-        return lowSize;
-    }
-
-    public static Size findMediumSize(List<Size> sizeList) {
-
-        if (sizeList == null || sizeList.isEmpty()) {
-            return null;
-        }
-
-        Size lowPreviewSize = findLowSize(sizeList);
-        Size highPreviewSize = findHighSize(sizeList);
-
-        int mediumWidth = (lowPreviewSize.width + highPreviewSize.width) / 2;
-
-        Size mediumSize = sizeList.get(0);
-        int mediumDiff = Math.abs(mediumSize.width - mediumWidth);
-
-        int diff;
-        for (Size size : sizeList) {
-            diff = Math.abs(size.width - mediumWidth);
-            if (diff < mediumDiff) {
-                mediumDiff = diff;
-                mediumSize = size;
-            }
-        }
-
-        return mediumSize;
     }
 
     @Nullable
@@ -457,11 +448,12 @@ public class CameraController {
                 CameraSettings.DEFAULT_ENABLE_VIDEO_STABILIZATION, CameraSettings.DEFAULT_PREVIEW_FRAME_RATE);
     }
 
+    @Nullable
     public Handler getCallbackHandler() {
         return callbackHandler;
     }
 
-    public void setCallbackHandler(Handler callbackHandler) {
+    public void setCallbackHandler(@Nullable Handler callbackHandler) {
         this.callbackHandler = callbackHandler;
     }
 
@@ -581,13 +573,17 @@ public class CameraController {
         public void surfaceCreated(SurfaceHolder holder) {
             logger.debug("SurfaceHolderCallback :: surfaceCreated()");
 
-            if (camera != null && holder != null) {
+            if (isCameraOpened() && holder != null && holder.getSurface() != null) { // isSurfaceCreated() check fails here
 
-                try {
-                    camera.setPreviewDisplay(holder);
-                } catch (IOException e) {
-                    logger.error("an IOException occurred during setPreviewDisplay()", e);
+                synchronized (sync) {
+                    try {
+                        camera.setPreviewDisplay(holder);
+                    } catch (IOException e) {
+                        logger.error("an IOException occurred during setPreviewDisplay()", e);
+                    }
                 }
+
+                listenOrientationChanges();
 
                 // startPreview();
             }
@@ -604,20 +600,7 @@ public class CameraController {
             surfaceWidth = width;
             surfaceHeight = height;
 
-            if (isCameraLocked()) {
-
-                stopPreview();
-
-                setCameraDisplayOrientation();
-
-                setCameraPreviewSize(getOptimalPreviewSize(getSupportedPreviewSizes(), surfaceWidth, surfaceHeight));
-
-                if (enableChangeSurfaceViewSize)
-                    setSurfaceViewSize(isFullscreenSurfaceViewSize, 0, cameraSurfaceView);
-
-                startPreview();
-                setPreviewCallback();
-            }
+            setupPreview();
 
             surfaceHolderCallbacks.notifySurfaceChanged(holder, format, width, height);
         }
@@ -631,14 +614,9 @@ public class CameraController {
 
             isSurfaceCreated = false;
 
-            stopPreview();
+            unlistenOrientationChanges();
 
-            if (camera != null) {
-                synchronized (sync) {
-                    camera.setErrorCallback(null);
-                    camera.setPreviewCallback(null);
-                }
-            }
+            stopPreview();
 
             surfaceHolderCallbacks.notifySurfaceDestroyed(holder);
         }
@@ -721,36 +699,147 @@ public class CameraController {
         surfaceView.setLayoutParams(layoutParams);
     }
 
-    private void setCameraDisplayOrientation() {
+    private boolean setCameraDisplayOrientation(int degrees) {
         logger.debug("setCameraDisplayOrientation()");
+
+        boolean result = false;
+
+        if (degrees >= 0 && degrees < 360) {
+
+            synchronized (sync) {
+
+                if (isCameraOpened() && isCameraLocked()) {
+
+                    final int resultDegrees = calculateCameraDisplayOrientation(degrees);
+
+                    int previousRotation = orientationListener.getPreviousRotation();
+
+                    if (previousRotation == ROTATION_NOT_SPECIFIED || previousRotation != resultDegrees) {
+                        logger.debug("camera rotation degrees: " + resultDegrees);
+
+                        try {
+                            camera.setDisplayOrientation(resultDegrees);
+                        } catch (RuntimeException e) {
+                            logger.error("a RuntimeException occurred during setDisplayOrientation()", e);
+                        }
+
+                        try {
+                            final Parameters params = camera.getParameters();
+                            params.setRotation(resultDegrees);
+                            camera.setParameters(params);
+                            result = true;
+                        } catch (RuntimeException e) {
+                            logger.error("a RuntimeException occurred during get/set camera parameters", e);
+                        }
+                    }
+
+                    if (result) {
+                        orientationListener.setPreviousRotation(degrees);
+                    }
+                }
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * @param degrees [0,360)
+     * @return 0, 90, 180, 270
+     */
+    public int calculateCameraDisplayOrientation(int degrees) {
 
         synchronized (sync) {
 
-            final int resultDegrees = calculateCameraDisplayOrientation(cameraId, context);
-            logger.debug("camera rotation degrees: " + resultDegrees);
+            int result = 0;
 
-            if (isCameraLocked()) {
-                try {
-                    camera.setDisplayOrientation(resultDegrees);
-                } catch (RuntimeException e) {
-                    logger.error("a RuntimeException occurred during setDisplayOrientation()", e);
+            int rotation = 0;
+
+            if (degrees >= 0 && degrees < 90) {
+                rotation = 0;
+            } else if (degrees >= 90 && degrees < 180) {
+                rotation = 90;
+            } else if (degrees >= 180 && degrees < 270) {
+                rotation = 180;
+            } else if (degrees >= 270 && degrees < 360) {
+                rotation = 270;
+            }
+
+            if (isCameraOpened()) {
+
+                if (cameraInfo == null) {
+                    cameraInfo = new CameraInfo();
+                    try {
+                        Camera.getCameraInfo(cameraId, cameraInfo);
+                    } catch (RuntimeException e) {
+                        logger.error("a RuntimeException occurred during getCameraInfo()", e);
+                        cameraInfo = null;
+                    }
                 }
 
-                try {
-                    final Parameters params = camera.getParameters();
-                    params.setRotation(resultDegrees);
-                    camera.setParameters(params);
-                } catch (RuntimeException e) {
-                    logger.error("a RuntimeException occurred during get/set camera parameters", e);
+                if (cameraInfo != null) {
+                    if (cameraInfo.facing == CAMERA_ID_BACK) {
+                        result = ((360 - rotation) + cameraInfo.orientation);
+                    } else if (cameraInfo.facing == CAMERA_ID_FRONT) {
+                        result = ((360 - rotation) - cameraInfo.orientation);
+                        result += 360;
+                    }
                 }
             }
 
-            if (mediaRecorder != null && !isMediaRecorderRecording) {
-                mediaRecorder.setOrientationHint(resultDegrees);
-            }
+            return result % 360;
+        }
 
+//        int rotate;
+//        if (isFrontFacingCam) {
+//            rotate = (360 + cameraRotationOffset + degrees) % 360;
+//        } else {
+//            rotate = (360 + cameraRotationOffset - degrees) % 360;
+//        }
+    }
+
+    private int getCurrentDisplayOrientation() {
+        int degrees = 0;
+        final int rotation = ((WindowManager) context.getSystemService(Context.WINDOW_SERVICE)).getDefaultDisplay().getRotation();
+        switch (rotation) {
+            case Surface.ROTATION_0:
+                degrees = 0;
+                break;
+            case Surface.ROTATION_90:
+                degrees = 90;
+                break;
+            case Surface.ROTATION_180:
+                degrees = 180;
+                break;
+            case Surface.ROTATION_270:
+                degrees = 270;
+                break;
+        }
+        return degrees;
+    }
+
+    private void listenOrientationChanges() {
+        if (!isOrientationListened) {
+            try {
+                orientationListener.enable();
+                isOrientationListened = true;
+            } catch (Exception e) {
+                logger.error("an Exception occurred", e);
+            }
         }
     }
+
+    private void unlistenOrientationChanges() {
+        if (isOrientationListened) {
+            try {
+                orientationListener.disable();
+            } catch (Exception e) {
+                logger.error("an Exception occurred", e);
+            }
+            isOrientationListened = false;
+        }
+    }
+
 
     public Location getLastLocation() {
         return lastLocation;
@@ -839,11 +928,7 @@ public class CameraController {
 
             if (isSurfaceCreated()) {
 
-                logger.debug("surface created, setting preview...");
-
-                setCameraDisplayOrientation();
-
-                setCameraPreviewSize(getOptimalPreviewSize(getSupportedPreviewSizes(), surfaceWidth, surfaceHeight));
+                logger.debug("surface already created, setting preview...");
 
                 try {
                     camera.setPreviewDisplay(cameraSurfaceHolder);
@@ -851,8 +936,9 @@ public class CameraController {
                     logger.error("an IOException occurred during setPreviewDisplay()", e);
                 }
 
-                startPreview();
-                setPreviewCallback();
+                setupPreview();
+
+                listenOrientationChanges();
             }
 
             return true;
@@ -995,12 +1081,42 @@ public class CameraController {
         return result;
     }
 
+    private boolean setupPreview() {
+
+        if (!isCameraLocked()) {
+            logger.error("can't setup preview: camera is not locked");
+            return false;
+        }
+
+        if (cameraSurfaceView == null) {
+            logger.error("can't setup preview: surface is not initialized");
+            return false;
+        }
+
+        stopPreview();
+
+        setCameraDisplayOrientation(getCurrentDisplayOrientation());
+
+        setCameraPreviewSize(getOptimalPreviewSize(getSupportedPreviewSizes(), surfaceWidth, surfaceHeight));
+
+        if (enableChangeSurfaceViewSize)
+            setSurfaceViewSize(isFullscreenSurfaceViewSize, 0, cameraSurfaceView);
+
+        if (startPreview()) {
+            setPreviewCallback();
+        }
+
+        return true;
+    }
+
     /**
      * for the first time must be called at onCreate() or onResume() handling surfaceCreated(), surfaceChanged() and
      * surfaceDestroyed() callbacks
      */
     public boolean openCamera(int cameraId, @NonNull SurfaceView surfaceView, @Nullable CameraSettings cameraSettings, Handler callbackHandler) {
         logger.debug("openCamera(), cameraId=" + cameraId + ", setMaxFps=" + cameraSettings);
+
+        checkReleased();
 
         setCallbackHandler(callbackHandler);
 
@@ -1040,10 +1156,12 @@ public class CameraController {
     public boolean releaseCamera() {
         logger.debug("releaseCamera()");
 
+        checkReleased();
+
         synchronized (sync) {
 
             if (!isCameraOpened()) {
-                logger.debug("camera is already not openedl");
+                logger.debug("camera is already not opened");
                 return true;
             }
 
@@ -1071,6 +1189,7 @@ public class CameraController {
 
             camera = null;
             cameraId = CAMERA_ID_NONE;
+            cameraInfo = null;
 
             // cameraSurfaceView = null;
 
@@ -1204,41 +1323,6 @@ public class CameraController {
             }
             return null;
         }
-    }
-
-    public static Camera.Size getOptimalPreviewSize(List<Camera.Size> sizes, int w, int h) {
-        final double ASPECT_TOLERANCE = 0.05;
-        double targetRatio = (double) w / h;
-        if (sizes == null)
-            return null;
-
-        Camera.Size optimalSize = null;
-        double minDiff = Double.MAX_VALUE;
-
-        int targetHeight = h;
-
-        // Try to find an size match aspect ratio and size
-        for (Camera.Size size : sizes) {
-            double ratio = (double) size.width / size.height;
-            if (Math.abs(ratio - targetRatio) > ASPECT_TOLERANCE)
-                continue;
-            if (Math.abs(size.height - targetHeight) < minDiff) {
-                optimalSize = size;
-                minDiff = Math.abs(size.height - targetHeight);
-            }
-        }
-
-        // Cannot find the one match the aspect ratio, ignore the requirement
-        if (optimalSize == null) {
-            minDiff = Double.MAX_VALUE;
-            for (Camera.Size size : sizes) {
-                if (Math.abs(size.height - targetHeight) < minDiff) {
-                    optimalSize = size;
-                    minDiff = Math.abs(size.height - targetHeight);
-                }
-            }
-        }
-        return optimalSize;
     }
 
     public Camera.Size getCameraPreviewSize() {
@@ -1698,6 +1782,7 @@ public class CameraController {
                 }
             } else {
                 logger.error(" _ color effect " + colorEffect.getValue() + " is NOT supported");
+                return false;
             }
 
             if (changed) {
@@ -1776,6 +1861,7 @@ public class CameraController {
                 }
             } else {
                 logger.error(" _ focus mode " + focusMode.getValue() + " is NOT supported");
+                return false;
             }
 
             if (changed) {
@@ -1857,6 +1943,7 @@ public class CameraController {
                 }
             } else {
                 logger.error(" _ flash mode " + flashMode.getValue() + " is NOT supported");
+                return false;
             }
 
             if (changed) {
@@ -1872,8 +1959,20 @@ public class CameraController {
         }
     }
 
-    public boolean setFlashEnabled(boolean enable) {
-        return setFlashMode(enable ? FlashMode.TORCH : FlashMode.AUTO);
+    public boolean enableFlash(boolean enable) {
+        boolean result;
+        if (enable) {
+            result = setFlashMode(FlashMode.TORCH);
+            if (!result) {
+                result = setFlashMode(FlashMode.ON);
+            }
+        } else {
+            result = setFlashMode(FlashMode.AUTO);
+            if (!result) {
+                result = setFlashMode(FlashMode.OFF);
+            }
+        }
+        return result;
     }
 
     private static boolean isExposureCompensationSupported(Pair<Integer, Integer> range) {
@@ -1950,10 +2049,12 @@ public class CameraController {
             Pair<Integer, Integer> range = getMinMaxExposureCompensation();
 
             if (!isExposureCompensationSupported(range)) {
+                logger.error("exposure compensation is not supported");
                 return false;
             }
 
             if (value < range.first || value > range.second) {
+                logger.error("incorrect exposure compensation value: " + value);
                 return false;
             }
 
@@ -2124,9 +2225,11 @@ public class CameraController {
                         }
                     } else {
                         logger.error(" _ zoom is NOT supported");
+                        return false;
                     }
                 } else {
                     logger.error("incorrect zoom level: " + zoom);
+                    return false;
                 }
             }
 
@@ -2145,6 +2248,8 @@ public class CameraController {
 
     public boolean takePhoto(String photoDirectoryPath, String photoFileName, final boolean writeToFile) {
         logger.debug("takePhoto(), photoDirectoryPath=" + photoDirectoryPath + ", photoFileName=" + photoFileName + ", writeToFile=" + writeToFile);
+
+        checkReleased();
 
         synchronized (sync) {
 
@@ -2242,6 +2347,11 @@ public class CameraController {
         public void onPictureTaken(final byte[] data, Camera camera) {
             logger.debug("onPictureTaken()");
 
+            if (isReleased) {
+                logger.error(CameraController.class.getSimpleName() + " is released");
+                return;
+            }
+
             synchronized (sync) {
 
                 if (currentCameraState != CameraState.TAKING_PHOTO) {
@@ -2251,6 +2361,8 @@ public class CameraController {
                 logger.debug("last photo file: " + lastPhotoFile);
                 if (lastPhotoFile != null) {
                     if (FileHelper.writeBytesToFile(lastPhotoFile, data, false)) {
+                        OrientationIntervalListener.writeExifOrientation(lastPhotoFile,
+                                orientationListener.currentRotation != ROTATION_NOT_SPECIFIED? orientationListener.currentRotation : calculateCameraDisplayOrientation(getCurrentDisplayOrientation()));
                         if (isStoreLocationEnabled() && lastLocation != null)
                             if (!FileHelper.writeExifLocation(lastPhotoFile, lastLocation)) {
                                 logger.error("can't write location to exif");
@@ -2783,7 +2895,7 @@ public class CameraController {
             mediaRecorder.setOutputFile(lastVideoFile.getAbsolutePath());
 
             mediaRecorder.setPreviewDisplay(cameraSurfaceView.getHolder().getSurface());
-            setCameraDisplayOrientation();
+            mediaRecorder.setOrientationHint(calculateCameraDisplayOrientation(getCurrentDisplayOrientation()));
 
             try {
                 mediaRecorder.prepare();
@@ -2857,6 +2969,8 @@ public class CameraController {
         logger.debug("startRecordVideo(), videoSettings=" + videoSettings + "deleteTempVideoFiles="
                 + ", recLimit=" + recLimit + ", saveDirectoryPath=" + saveDirectoryPath + ", fileName=" + fileName);
 
+        checkReleased();
+
         synchronized (sync) {
 
             if (currentCameraState != CameraState.IDLE) {
@@ -2897,6 +3011,8 @@ public class CameraController {
 
     public File stopRecordVideo() {
         logger.debug("stopRecordVideo()");
+
+        checkReleased();
 
         synchronized (sync) {
 
@@ -2957,14 +3073,18 @@ public class CameraController {
         }
     }
 
-    // TODO доработать executor
-    public void initMakePreviewThreadPoolExecutor(int poolSize) {
+    public void initMakePreviewThreadPoolExecutor(int poolSize,
+                                                  TaskRunnable.ITaskResultValidator<MakePreviewRunnableInfo, MakePreviewRunnable> validator,
+                                                  AbstractSyncStorage<MakePreviewRunnableInfo> storage,
+                                                  TaskRunnable.ITaskRestorer<MakePreviewRunnableInfo, MakePreviewRunnable> restorer,
+                                                  Handler callbackHandler
+    ) {
         logger.debug("initMakePreviewThreadPoolExecutor(), poolSize=" + poolSize);
 
         releaseMakePreviewThreadPoolExecutor();
 
         makePreviewThreadPoolExecutor = new TaskRunnableExecutor<>(DEFAULT_MAKE_PREVIEW_POOL_SIZE, 1, TaskRunnableExecutor.DEFAULT_KEEP_ALIVE_TIME, TimeUnit.SECONDS, "MakePreviewThread",
-                null, null, null, null);
+                validator, storage, restorer, callbackHandler);
     }
 
     public void releaseMakePreviewThreadPoolExecutor() {
@@ -2983,37 +3103,55 @@ public class CameraController {
         previewCallback.setAllowLogging(enable);
     }
 
-    public static int calculateCameraDisplayOrientation(int cameraId, Context ctx) {
+    private void run(@Nullable Runnable run) {
+        if (run != null) {
+            if (callbackHandler != null) {
+                callbackHandler.post(run);
+            } else {
+                run.run();
+            }
+        }
+    }
 
-        int degrees = 0;
-        final int rotation = ((WindowManager) ctx.getSystemService(Context.WINDOW_SERVICE)).getDefaultDisplay().getRotation();
-        switch (rotation) {
-            case Surface.ROTATION_0:
-                degrees = 0;
-                break;
-            case Surface.ROTATION_90:
-                degrees = 90;
-                break;
-            case Surface.ROTATION_180:
-                degrees = 180;
-                break;
-            case Surface.ROTATION_270:
-                degrees = 270;
-                break;
+    public static Size findLowSize(List<Size> sizeList) {
+
+        if (sizeList == null || sizeList.isEmpty()) {
+            return null;
         }
 
-        CameraInfo cameraInfo = new CameraInfo();
-        Camera.getCameraInfo(cameraId, cameraInfo);
-
-        int result = 0;
-
-        if (cameraInfo.facing == CameraInfo.CAMERA_FACING_BACK) {
-            result = ((360 - degrees) + cameraInfo.orientation);
-        } else if (cameraInfo.facing == CameraInfo.CAMERA_FACING_FRONT) {
-            result = ((360 - degrees) - cameraInfo.orientation);
-            result += 360;
+        Size lowSize = sizeList.get(0);
+        for (Size size : sizeList) {
+            if (size.width < lowSize.width) {
+                lowSize = size;
+            }
         }
-        return result % 360;
+        return lowSize;
+    }
+
+    public static Size findMediumSize(List<Size> sizeList) {
+
+        if (sizeList == null || sizeList.isEmpty()) {
+            return null;
+        }
+
+        Size lowPreviewSize = findLowSize(sizeList);
+        Size highPreviewSize = findHighSize(sizeList);
+
+        int mediumWidth = (lowPreviewSize.width + highPreviewSize.width) / 2;
+
+        Size mediumSize = sizeList.get(0);
+        int mediumDiff = Math.abs(mediumSize.width - mediumWidth);
+
+        int diff;
+        for (Size size : sizeList) {
+            diff = Math.abs(size.width - mediumWidth);
+            if (diff < mediumDiff) {
+                mediumDiff = diff;
+                mediumSize = size;
+            }
+        }
+
+        return mediumSize;
     }
 
     public static Size findHighSize(List<Size> sizeList) {
@@ -3029,6 +3167,41 @@ public class CameraController {
             }
         }
         return highSize;
+    }
+
+    public static Camera.Size getOptimalPreviewSize(List<Camera.Size> sizes, int w, int h) {
+        final double ASPECT_TOLERANCE = 0.05;
+        double targetRatio = (double) w / h;
+        if (sizes == null)
+            return null;
+
+        Camera.Size optimalSize = null;
+        double minDiff = Double.MAX_VALUE;
+
+        int targetHeight = h;
+
+        // Try to find an size match aspect ratio and size
+        for (Camera.Size size : sizes) {
+            double ratio = (double) size.width / size.height;
+            if (Math.abs(ratio - targetRatio) > ASPECT_TOLERANCE)
+                continue;
+            if (Math.abs(size.height - targetHeight) < minDiff) {
+                optimalSize = size;
+                minDiff = Math.abs(size.height - targetHeight);
+            }
+        }
+
+        // Cannot find the one match the aspect ratio, ignore the requirement
+        if (optimalSize == null) {
+            minDiff = Double.MAX_VALUE;
+            for (Camera.Size size : sizes) {
+                if (Math.abs(size.height - targetHeight) < minDiff) {
+                    optimalSize = size;
+                    minDiff = Math.abs(size.height - targetHeight);
+                }
+            }
+        }
+        return optimalSize;
     }
 
     private static String getFileExtensionByVideoEncoder(VideoEncoder videoEncoder) {
@@ -3105,16 +3278,6 @@ public class CameraController {
         return name.toString();
     }
 
-    private void run(@Nullable Runnable run) {
-        if (run != null) {
-            if (callbackHandler != null) {
-                callbackHandler.post(run);
-            } else {
-                run.run();
-            }
-        }
-    }
-
     private static String camcorderProfileToString(CamcorderProfile profile) {
         List<String> result = new ArrayList<>();
         result.add("quality=" + profile.quality);
@@ -3130,6 +3293,10 @@ public class CameraController {
         return "==CamcorderProfile=="
                 + System.getProperty("line.separator")
                 + TextUtils.join(", ", result);
+    }
+
+    public static void setLogger(Logger logger) {
+        CameraController.logger = logger != null ? logger : new Logger.Stub();
     }
 
     public class MakePreviewRunnable extends TaskRunnable<MakePreviewRunnableInfo> {
@@ -3252,7 +3419,8 @@ public class CameraController {
         private int previewHeight = -1;
 
         CustomPreviewCallback() {
-            super(logger);
+            super(callbackHandler != null ? callbackHandler.getLooper() : Looper.getMainLooper());
+            setFrameLogger(logger);
         }
 
         public void setAllowLogging(boolean allow) {
@@ -3306,10 +3474,12 @@ public class CameraController {
             if (isCameraLocked() && callbackBufferQueueSize > 0) {
                 camera.addCallbackBuffer(data);
             }
+
+            previewFrameListeners.notifyPreviewFrame(data);
         }
     }
 
-    private class ScaleFactorChangeListener implements SimpleGestureListener.ScaleFactorChangeListener {
+    protected class ScaleFactorChangeListener implements SimpleGestureListener.ScaleFactorChangeListener {
 
         @Override
         public void onScaleFactorChanged(float from, float to) {
@@ -3380,6 +3550,21 @@ public class CameraController {
                 }
             }
 
+        }
+    }
+
+    protected class OrientationListener extends OrientationIntervalListener {
+
+        public int currentRotation = ROTATION_NOT_SPECIFIED;
+
+        public OrientationListener(Context context) {
+            super(context, SensorManager.SENSOR_DELAY_NORMAL, TimeUnit.SECONDS.toMillis(2));
+        }
+
+        @Override
+        protected void doAction(int orientation) {
+            currentRotation = calculateCameraDisplayOrientation(orientation);
+//            setCameraDisplayOrientation(orientation);
         }
     }
 
@@ -3559,6 +3744,23 @@ public class CameraController {
         }
     }
 
+    protected class PreviewFrameObservable extends Observable<IPreviewFrameListener> {
+
+        void notifyPreviewFrame(final byte[] data) {
+            Runnable run = new Runnable() {
+                @Override
+                public void run() {
+                    synchronized (mObservers) {
+                        for (IPreviewFrameListener l : mObservers) {
+                            l.onPreviewFrame(data);
+                        }
+                    }
+                }
+            };
+            run(run);
+        }
+    }
+
     public interface ICameraStateChangeListener {
 
         void onCameraStateChanged(CameraState currentState);
@@ -3598,5 +3800,10 @@ public class CameraController {
          * preview for its video file is ready; invokes from the other thread
          */
         void onVideoPreviewReady(File previewFile, Bitmap firstFrame, Bitmap lastFrame, File videoFile);
+    }
+
+    public interface IPreviewFrameListener {
+
+        void onPreviewFrame(byte[] data);
     }
 }
