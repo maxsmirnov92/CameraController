@@ -2154,7 +2154,7 @@ public class CameraController {
 
     @NonNull
     public static Pair<WhiteBalance, WhiteBalance> getMinMaxWhiteBalance() {
-        return new Pair<>(WhiteBalance.getValue(true), WhiteBalance.getValue(false));
+        return new Pair<>(WhiteBalance.getMinMaxValue(true), WhiteBalance.getMinMaxValue(false));
     }
 
     @NonNull
@@ -3651,7 +3651,7 @@ public class CameraController {
     protected class OrientationListener extends OrientationIntervalListener {
 
         public OrientationListener(Context context) {
-            super(context, SensorManager.SENSOR_DELAY_NORMAL, TimeUnit.SECONDS.toMillis(1), 80);
+            super(context, SensorManager.SENSOR_DELAY_NORMAL, TimeUnit.SECONDS.toMillis(1), 45);
         }
 
         @Override
@@ -3872,9 +3872,11 @@ public class CameraController {
             Runnable run = new Runnable() {
                 @Override
                 public void run() {
-                    synchronized (mObservers) {
-                        for (IPreviewFrameListener l : mObservers) {
-                            l.onPreviewFrame(data);
+                    if (data != null && data.length > 0) {
+                        synchronized (mObservers) {
+                            for (IPreviewFrameListener l : mObservers) {
+                                l.onPreviewFrame(data);
+                            }
                         }
                     }
                 }
@@ -3930,6 +3932,6 @@ public class CameraController {
 
         void onPreviewFinished();
 
-        void onPreviewFrame(byte[] data);
+        void onPreviewFrame(@NonNull byte[] data);
     }
 }

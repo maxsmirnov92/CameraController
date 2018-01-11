@@ -68,7 +68,7 @@ public enum  WhiteBalance {
     }
 
     @NonNull
-    public static WhiteBalance getValue(boolean min) {
+    public static WhiteBalance getMinMaxValue(boolean min) {
         WhiteBalance result = WhiteBalance.AUTO;
         for (WhiteBalance v : WhiteBalance.values()) {
             if (min && v.getId() < result.getId()) {
