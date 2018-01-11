@@ -252,6 +252,7 @@ public class CameraController {
         videoPreviewListeners.unregisterAll();
 
         context = null;
+        orientationListener = null;
 
         isReleased = true;
     }
@@ -396,7 +397,7 @@ public class CameraController {
         }
 
 
-        return new CameraSettings(DEFAULT_IMAGE_FORMAT, DEFAULT_PREVIEW_FORMAT, findLowSize(supportedPictureSizes), 50,
+        return new CameraSettings(DEFAULT_IMAGE_FORMAT, DEFAULT_PREVIEW_FORMAT, findLowHighSize(supportedPictureSizes, true), 50,
                 CameraSettings.DEFAULT_ENABLE_VIDEO_STABILIZATION, CameraSettings.DEFAULT_PREVIEW_FRAME_RATE);
     }
 
@@ -444,7 +445,7 @@ public class CameraController {
             return null;
         }
 
-        return new CameraSettings(DEFAULT_IMAGE_FORMAT, DEFAULT_PREVIEW_FORMAT, findHighSize(supportedPictureSizes), 100,
+        return new CameraSettings(DEFAULT_IMAGE_FORMAT, DEFAULT_PREVIEW_FORMAT, findLowHighSize(supportedPictureSizes, false), 100,
                 CameraSettings.DEFAULT_ENABLE_VIDEO_STABILIZATION, CameraSettings.DEFAULT_PREVIEW_FRAME_RATE);
     }
 
@@ -487,6 +488,10 @@ public class CameraController {
     public boolean usePreviewCallbackWithBuffer(boolean use, int queueSize) {
         logger.debug("usePreviewCallbackWithBuffer(), use=" + use + ", queueSize=" + queueSize);
 
+        if (use && queueSize == 0 || queueSize < 0) {
+            throw new IllegalArgumentException("incorrect queueSize: " + queueSize);
+        }
+
         if (queueSize != callbackBufferQueueSize) {
 
             if (isMediaRecorderRecording) {
@@ -502,11 +507,8 @@ public class CameraController {
             }
 
             if (isPreviewStated) {
-                stopPreview();
-                startPreview();
+                restartPreview();
             }
-
-            setPreviewCallback();
         }
 
         return true;
@@ -583,8 +585,6 @@ public class CameraController {
                     }
                 }
 
-                listenOrientationChanges();
-
                 // startPreview();
             }
 
@@ -614,9 +614,15 @@ public class CameraController {
 
             isSurfaceCreated = false;
 
-            unlistenOrientationChanges();
-
             stopPreview();
+
+            synchronized (sync) {
+                try {
+                    camera.setPreviewDisplay(null);
+                } catch (IOException e) {
+                    logger.error("an IOException occurred during setPreviewDisplay()", e);
+                }
+            }
 
             surfaceHolderCallbacks.notifySurfaceDestroyed(holder);
         }
@@ -699,30 +705,51 @@ public class CameraController {
         surfaceView.setLayoutParams(layoutParams);
     }
 
-    private boolean setCameraDisplayOrientation(int degrees) {
-        logger.debug("setCameraDisplayOrientation()");
+    private boolean setCameraDisplayOrientation(int displayDegrees) {
+        logger.debug("setCameraDisplayOrientation(), displayDegrees=" + displayDegrees);
 
         boolean result = false;
 
-        if (degrees >= 0 && degrees < 360) {
+        if (displayDegrees >= 0 && displayDegrees < 360) {
 
             synchronized (sync) {
 
                 if (isCameraOpened() && isCameraLocked()) {
 
-                    final int resultDegrees = calculateCameraDisplayOrientation(degrees);
+                    final int resultDegrees = calculateCameraDisplayOrientation(displayDegrees);
 
-                    int previousRotation = orientationListener.getPreviousRotation();
+                    try {
+                        camera.setDisplayOrientation(resultDegrees);
+                        result = true;
+                    } catch (RuntimeException e) {
+                        logger.error("a RuntimeException occurred during setDisplayOrientation()", e);
+                    }
+                }
+            }
+        } else {
+            logger.error("incorrect displayDegrees: " + displayDegrees);
+        }
+
+        return result;
+    }
+
+    private boolean setCameraRotation(int displayDegrees) {
+        logger.debug("setCameraRotation(), displayDegrees=" + displayDegrees);
+
+        boolean result = false;
+
+        if (displayDegrees >= 0 && displayDegrees < 360) {
+
+            synchronized (sync) {
+
+                if (isCameraOpened() && isCameraLocked()) {
+
+                    final int resultDegrees = calculateCameraRotation(displayDegrees);
+
+                    int previousRotation = orientationListener.getPreviousFixedRotation();
 
                     if (previousRotation == ROTATION_NOT_SPECIFIED || previousRotation != resultDegrees) {
-                        logger.debug("camera rotation degrees: " + resultDegrees);
-
-                        try {
-                            camera.setDisplayOrientation(resultDegrees);
-                        } catch (RuntimeException e) {
-                            logger.error("a RuntimeException occurred during setDisplayOrientation()", e);
-                        }
-
+                        logger.debug("camera rotation displayDegrees: " + resultDegrees);
                         try {
                             final Parameters params = camera.getParameters();
                             params.setRotation(resultDegrees);
@@ -734,7 +761,39 @@ public class CameraController {
                     }
 
                     if (result) {
-                        orientationListener.setPreviousRotation(degrees);
+                        orientationListener.setPreviousFixedRotation(displayDegrees);
+                    }
+                }
+            }
+        } else {
+            logger.error("incorrect displayDegrees: " + displayDegrees);
+        }
+
+        return result;
+    }
+
+    /**
+     * @param displayDegrees [0,360)
+     * @return 0, 90, 180, 270
+     */
+    public int calculateCameraDisplayOrientation(int displayDegrees) {
+
+        int result = 0;
+
+        int rotation = getCorrectedDegrees(displayDegrees);
+
+        synchronized (sync) {
+
+            if (isCameraOpened()) {
+
+                initCameraInfo();
+
+                if (cameraInfo != null) {
+                    if (cameraInfo.facing == Camera.CameraInfo.CAMERA_FACING_FRONT) {
+                        result = (cameraInfo.orientation + rotation) % 360;
+                        result = (360 - result) % 360;  // compensate the mirror
+                    } else {  // back-facing
+                        result = (cameraInfo.orientation - rotation + 360) % 360;
                     }
                 }
             }
@@ -743,59 +802,44 @@ public class CameraController {
         return result;
     }
 
-    /**
-     * @param degrees [0,360)
-     * @return 0, 90, 180, 270
-     */
-    public int calculateCameraDisplayOrientation(int degrees) {
+    public int calculateCameraRotation(int displayDegrees) {
+        int result = 0;
+
+        int rotation = getCorrectedDegrees(displayDegrees);
+
+        rotation = (rotation + 45) / 90 * 90;
 
         synchronized (sync) {
 
-            int result = 0;
-
-            int rotation = 0;
-
-            if (degrees >= 0 && degrees < 90) {
-                rotation = 0;
-            } else if (degrees >= 90 && degrees < 180) {
-                rotation = 90;
-            } else if (degrees >= 180 && degrees < 270) {
-                rotation = 180;
-            } else if (degrees >= 270 && degrees < 360) {
-                rotation = 270;
-            }
-
             if (isCameraOpened()) {
 
-                if (cameraInfo == null) {
-                    cameraInfo = new CameraInfo();
-                    try {
-                        Camera.getCameraInfo(cameraId, cameraInfo);
-                    } catch (RuntimeException e) {
-                        logger.error("a RuntimeException occurred during getCameraInfo()", e);
-                        cameraInfo = null;
-                    }
-                }
+                initCameraInfo();
 
                 if (cameraInfo != null) {
-                    if (cameraInfo.facing == CAMERA_ID_BACK) {
-                        result = ((360 - rotation) + cameraInfo.orientation);
-                    } else if (cameraInfo.facing == CAMERA_ID_FRONT) {
-                        result = ((360 - rotation) - cameraInfo.orientation);
-                        result += 360;
+                    if (cameraInfo.facing == CameraInfo.CAMERA_FACING_FRONT) {
+                        result = (cameraInfo.orientation - rotation + 360) % 360;
+                    } else {  // back-facing camera
+                        result = (cameraInfo.orientation + rotation) % 360;
                     }
                 }
             }
-
-            return result % 360;
         }
 
-//        int rotate;
-//        if (isFrontFacingCam) {
-//            rotate = (360 + cameraRotationOffset + degrees) % 360;
-//        } else {
-//            rotate = (360 + cameraRotationOffset - degrees) % 360;
-//        }
+        return result;
+    }
+
+    private static int getCorrectedDegrees(int degrees) {
+        int result = 0;
+        if (degrees >= 0 && degrees < 90) {
+            result = 0;
+        } else if (degrees >= 90 && degrees < 180) {
+            result = 90;
+        } else if (degrees >= 180 && degrees < 270) {
+            result = 180;
+        } else if (degrees >= 270 && degrees < 360) {
+            result = 270;
+        }
+        return result;
     }
 
     private int getCurrentDisplayOrientation() {
@@ -819,27 +863,30 @@ public class CameraController {
     }
 
     private void listenOrientationChanges() {
-        if (!isOrientationListened) {
-            try {
-                orientationListener.enable();
-                isOrientationListened = true;
-            } catch (Exception e) {
-                logger.error("an Exception occurred", e);
+        if (orientationListener != null) {
+            if (!isOrientationListened) {
+                try {
+                    orientationListener.enable();
+                    isOrientationListened = true;
+                } catch (Exception e) {
+                    logger.error("an Exception occurred", e);
+                }
             }
         }
     }
 
     private void unlistenOrientationChanges() {
-        if (isOrientationListened) {
-            try {
-                orientationListener.disable();
-            } catch (Exception e) {
-                logger.error("an Exception occurred", e);
+        if (orientationListener != null) {
+            if (isOrientationListened) {
+                try {
+                    orientationListener.disable();
+                } catch (Exception e) {
+                    logger.error("an Exception occurred", e);
+                }
             }
-            isOrientationListened = false;
         }
+        isOrientationListened = false;
     }
-
 
     public Location getLastLocation() {
         return lastLocation;
@@ -914,17 +961,13 @@ public class CameraController {
             }
 
             setCameraSettings(cameraSettings);
-
-            previewCallback.updatePreviewFormat(getCameraPreviewFormat());
-            previewCallback.updatePreviewSize(getCameraPreviewSize());
-
-            if (cameraSurfaceHolderCallback != null) {
-                cameraSurfaceHolder.removeCallback(cameraSurfaceHolderCallback);
-                cameraSurfaceHolderCallback = null;
-            }
+            int currentRotation = orientationListener.currentRotation;
+            setCameraRotation(currentRotation != ROTATION_NOT_SPECIFIED? currentRotation : getCurrentDisplayOrientation());
 
             cameraSurfaceHolderCallback = new CameraSurfaceHolderCallback();
             cameraSurfaceHolder.addCallback(cameraSurfaceHolderCallback);
+
+            listenOrientationChanges();
 
             if (isSurfaceCreated()) {
 
@@ -937,11 +980,23 @@ public class CameraController {
                 }
 
                 setupPreview();
-
-                listenOrientationChanges();
             }
 
             return true;
+        }
+    }
+
+    private void initCameraInfo() {
+        if (cameraInfo == null) {
+            if (isCameraOpened()) {
+                cameraInfo = new CameraInfo();
+                try {
+                    Camera.getCameraInfo(cameraId, cameraInfo);
+                } catch (RuntimeException e) {
+                    logger.error("a RuntimeException occurred during getCameraInfo()", e);
+                    cameraInfo = null;
+                }
+            }
         }
     }
 
@@ -1171,12 +1226,20 @@ public class CameraController {
                 }
             }
 
+            unlistenOrientationChanges();
+
             setCurrentCameraState(CameraState.IDLE);
 
-            if (cameraSurfaceView != null && surfaceGestureListener != null) {
-                cameraSurfaceView.setOnTouchListener(surfaceGestureListener = null);
+            if (cameraSurfaceView != null) {
+                if (cameraSurfaceHolderCallback != null) {
+                    cameraSurfaceView.getHolder().removeCallback(cameraSurfaceHolderCallback);
+                    cameraSurfaceHolderCallback = null;
+                }
+                if (surfaceGestureListener != null) {
+                    cameraSurfaceView.setOnTouchListener(surfaceGestureListener = null);
+                }
+                cameraSurfaceView = null;
             }
-            cameraSurfaceView = null;
 
             stopPreview();
 
@@ -1351,7 +1414,7 @@ public class CameraController {
         }
     }
 
-    private boolean setCameraPreviewSize(Camera.Size size) {
+    public boolean setCameraPreviewSize(Camera.Size size) {
         logger.debug("setCameraPreviewSize(), size=" + size);
 
         if (size == null) {
@@ -1362,7 +1425,7 @@ public class CameraController {
         return setCameraPreviewSize(size.width, size.height);
     }
 
-    private boolean setCameraPreviewSize(int width, int height) {
+    public boolean setCameraPreviewSize(int width, int height) {
         logger.debug("setCameraPreviewSize(), width=" + width + ", height=" + height);
 
         synchronized (sync) {
@@ -1374,11 +1437,6 @@ public class CameraController {
 
             if (width <= 0 || height <= 0) {
                 logger.error("incorrect size: " + width + "x" + height);
-                return false;
-            }
-
-            if (camera == null) {
-                logger.error("camera is null");
                 return false;
             }
 
@@ -1395,6 +1453,8 @@ public class CameraController {
                 logger.error("a RuntimeException occurred during getParameters()", e);
                 return false;
             }
+
+            boolean isPreviewSizeChanged = false;
 
             boolean isPreviewSizeSupported = false;
 
@@ -1418,23 +1478,27 @@ public class CameraController {
 
             } else {
                 logger.debug(" _ preview size " + width + "x" + height + " is supported");
-                params.setPreviewSize(width, height);
+                Size currentSize = params.getPreviewSize();
+                if (currentSize.width != width || currentSize.height != height) {
+                    params.setPreviewSize(width, height);
+                    isPreviewSizeChanged = true;
+                }
             }
 
-            try {
-                camera.setParameters(params);
-            } catch (RuntimeException e) {
-                logger.error("a RuntimeException occurred during setParameters()", e);
-                return false;
-            }
+            if (isPreviewSizeChanged) {
+                try {
+                    camera.setParameters(params);
+                } catch (RuntimeException e) {
+                    logger.error("a RuntimeException occurred during setParameters()", e);
+                    return false;
+                }
 
-            previewCallback.updatePreviewSize(width, height);
+                previewCallback.updatePreviewSize(width, height);
 
-            if (isPreviewStated) {
-                // restart preview and reset callback
-                stopPreview();
-                startPreview();
-                setPreviewCallback();
+                if (isPreviewStated) {
+                    // restart preview and reset callback
+                    restartPreview();
+                }
             }
 
             return true;
@@ -1681,31 +1745,38 @@ public class CameraController {
             if (supportedPreviewFpsRanges != null && !supportedPreviewFpsRanges.isEmpty()) {
 
                 if (previewFps == CameraSettings.PREVIEW_FRAME_RATE_AUTO) {
-                    fpsRange = supportedPreviewFpsRanges.get(supportedPreviewFpsRanges.size() - 1);
+                    fpsRange = findLowHighRange(supportedPreviewFpsRanges, false);
                 } else {
                     fpsRange = new int[]{previewFps * 1000, previewFps * 1000};
                 }
 
                 boolean isPreviewFpsRangeSupported = false;
 
-                for (int i = 0; i < supportedPreviewFpsRanges.size(); i++) {
+                if (fpsRange != null) {
+                    for (int i = 0; i < supportedPreviewFpsRanges.size(); i++) {
 
-                    final int supportedMinFpsScaled = supportedPreviewFpsRanges.get(i)[Parameters.PREVIEW_FPS_MIN_INDEX];
-                    final int supportedMaxFpsScaled = supportedPreviewFpsRanges.get(i)[Parameters.PREVIEW_FPS_MAX_INDEX];
+                        final int supportedMinFpsScaled = supportedPreviewFpsRanges.get(i)[Parameters.PREVIEW_FPS_MIN_INDEX];
+                        final int supportedMaxFpsScaled = supportedPreviewFpsRanges.get(i)[Parameters.PREVIEW_FPS_MAX_INDEX];
 
-                    if (fpsRange[0] >= supportedMinFpsScaled && fpsRange[0] <= supportedMaxFpsScaled && fpsRange[1] >= supportedMinFpsScaled
-                            && fpsRange[1] <= supportedMaxFpsScaled) {
-                        isPreviewFpsRangeSupported = true;
-                        break;
+                        if (fpsRange[0] >= supportedMinFpsScaled && fpsRange[0] <= supportedMaxFpsScaled && fpsRange[1] >= supportedMinFpsScaled
+                                && fpsRange[1] <= supportedMaxFpsScaled) {
+                            isPreviewFpsRangeSupported = true;
+                            break;
+                        }
                     }
                 }
 
-                if (!isPreviewFpsRangeSupported) {
+                if (isPreviewFpsRangeSupported) {
                     logger.debug(" _ FPS range " + fpsRange[0] / 1000 + " .. " + fpsRange[1] / 1000 + " is supported");
-                    params.setPreviewFpsRange(fpsRange[0], fpsRange[1]);
-                    isPreviewFpsRangeChanged = true;
+                    int[] currentRange = new int[2];
+                    params.getPreviewFpsRange(currentRange);
+                    if (currentRange[0] != fpsRange[0] || currentRange[1] != fpsRange[1]) {
+                        params.setPreviewFpsRange(fpsRange[0], fpsRange[1]);
+                        isPreviewFpsRangeChanged = true;
+                    }
                 } else {
-                    logger.error(" _ FPS range " + fpsRange[0] / 1000 + " .. " + fpsRange[1] / 1000 + " is NOT supported");
+                    logger.error(" _ FPS range " +
+                            (fpsRange != null ? fpsRange[0] / 1000 + " .. " + fpsRange[1] / 1000 : null) + " is NOT supported");
                 }
 
             } else {
@@ -1730,7 +1801,9 @@ public class CameraController {
             }
 
             if (isPreviewFormatChanged || isPreviewFpsRangeChanged) {
-                previewCallback.updatePreviewFormat(previewFormat);
+                if (isPreviewFormatChanged) {
+                    previewCallback.updatePreviewFormat(previewFormat);
+                }
                 if (isPreviewStated) {
                     // restart preview and reset callback
                     restartPreview();
@@ -2361,8 +2434,6 @@ public class CameraController {
                 logger.debug("last photo file: " + lastPhotoFile);
                 if (lastPhotoFile != null) {
                     if (FileHelper.writeBytesToFile(lastPhotoFile, data, false)) {
-                        OrientationIntervalListener.writeExifOrientation(lastPhotoFile,
-                                orientationListener.currentRotation != ROTATION_NOT_SPECIFIED? orientationListener.currentRotation : calculateCameraDisplayOrientation(getCurrentDisplayOrientation()));
                         if (isStoreLocationEnabled() && lastLocation != null)
                             if (!FileHelper.writeExifLocation(lastPhotoFile, lastLocation)) {
                                 logger.error("can't write location to exif");
@@ -2372,8 +2443,9 @@ public class CameraController {
                     }
                 }
 
-                startPreview();
-                setPreviewCallback();
+                if (startPreview()) {
+                    setPreviewCallback();
+                }
 
                 setCurrentCameraState(CameraState.IDLE);
 
@@ -2414,7 +2486,7 @@ public class CameraController {
             return null;
         }
 
-        final Size lowVideoSize = findLowSize(getSupportedVideoSizes());
+        final Size lowVideoSize = findLowHighSize(getSupportedVideoSizes(), true);
         if (lowVideoSize != null) {
             logger.debug(" _ low VIDEO size: " + lowVideoSize.width + "x" + lowVideoSize.height);
         } else {
@@ -2462,7 +2534,7 @@ public class CameraController {
             return null;
         }
 
-        final Size highVideoSize = findHighSize(getSupportedVideoSizes());
+        final Size highVideoSize = findLowHighSize(getSupportedVideoSizes(), false);
         if (highVideoSize != null) {
             logger.debug(" _ high VIDEO size: " + highVideoSize.width + "x" + highVideoSize.height);
         } else {
@@ -2487,12 +2559,10 @@ public class CameraController {
         }
 
         boolean isVideoSizeSupported = false;
-        // boolean isPreviewSizeSupported = false;
 
         final List<Camera.Size> supportedVideoSizes = getSupportedVideoSizes();
-        // final List<Camera.Size> supportedPreviewSizes = getSupportedPreviewSizes();
 
-        if (supportedVideoSizes != null /* && supportedPreviewSizes != null */) {
+        if (supportedVideoSizes != null) {
 
             if (width > 0 && height > 0) {
 
@@ -2503,10 +2573,9 @@ public class CameraController {
                     }
                 }
             }
-
         }
 
-        return (isVideoSizeSupported /* && isPreviewSizeSupported */);
+        return (isVideoSizeSupported);
     }
 
     /**
@@ -2822,7 +2891,9 @@ public class CameraController {
 
             if (!unlockCamera()) {
                 logger.error("unlocking camera failed");
-                startPreview();
+                if (startPreview()) {
+                    setPreviewCallback();
+                }
                 return false;
             }
 
@@ -2895,7 +2966,9 @@ public class CameraController {
             mediaRecorder.setOutputFile(lastVideoFile.getAbsolutePath());
 
             mediaRecorder.setPreviewDisplay(cameraSurfaceView.getHolder().getSurface());
-            mediaRecorder.setOrientationHint(calculateCameraDisplayOrientation(getCurrentDisplayOrientation()));
+
+            int currentRotation = orientationListener.currentRotation;
+            mediaRecorder.setOrientationHint(calculateCameraRotation(currentRotation != ROTATION_NOT_SPECIFIED? currentRotation : getCurrentDisplayOrientation()));
 
             try {
                 mediaRecorder.prepare();
@@ -2959,8 +3032,9 @@ public class CameraController {
                 if (callbackBufferQueueSize > 0)
                     setRecordingHint(false);
 
-                startPreview();
-                setPreviewCallback();
+                if (startPreview()) {
+                    setPreviewCallback();
+                }
             }
         }
     }
@@ -3113,29 +3187,33 @@ public class CameraController {
         }
     }
 
-    public static Size findLowSize(List<Size> sizeList) {
+    @Nullable
+    public static Size findLowHighSize(List<Size> sizeList, boolean isLow) {
 
         if (sizeList == null || sizeList.isEmpty()) {
             return null;
         }
 
-        Size lowSize = sizeList.get(0);
+        Size result = sizeList.get(0);
         for (Size size : sizeList) {
-            if (size.width < lowSize.width) {
-                lowSize = size;
+            if (size != null) {
+                if (result == null || (isLow ? size.width < result.width : size.width > result.width)) {
+                    result = size;
+                }
             }
         }
-        return lowSize;
+        return result;
     }
 
+    @Nullable
     public static Size findMediumSize(List<Size> sizeList) {
 
         if (sizeList == null || sizeList.isEmpty()) {
             return null;
         }
 
-        Size lowPreviewSize = findLowSize(sizeList);
-        Size highPreviewSize = findHighSize(sizeList);
+        Size lowPreviewSize = findLowHighSize(sizeList, true);
+        Size highPreviewSize = findLowHighSize(sizeList, false);
 
         int mediumWidth = (lowPreviewSize.width + highPreviewSize.width) / 2;
 
@@ -3144,29 +3222,33 @@ public class CameraController {
 
         int diff;
         for (Size size : sizeList) {
-            diff = Math.abs(size.width - mediumWidth);
-            if (diff < mediumDiff) {
-                mediumDiff = diff;
-                mediumSize = size;
+            if (size != null) {
+                diff = Math.abs(size.width - mediumWidth);
+                if (diff < mediumDiff) {
+                    mediumDiff = diff;
+                    mediumSize = size;
+                }
             }
         }
 
         return mediumSize;
     }
 
-    public static Size findHighSize(List<Size> sizeList) {
-
-        if (sizeList == null || sizeList.isEmpty()) {
+    @Nullable
+    public static int[] findLowHighRange(List<int[]> ranges, boolean isLow) {
+        if (ranges == null || ranges.isEmpty()) {
             return null;
         }
 
-        Size highSize = sizeList.get(0);
-        for (Size size : sizeList) {
-            if (size.width > highSize.width) {
-                highSize = size;
+        int[] result = ranges.get(0) != null && ranges.get(0).length == 2 ? ranges.get(0) : null;
+        for (int[] range : ranges) {
+            if (range != null && range.length == 2) {
+                if (result == null || isLow ? range[0] < result[0] : range[0] > result[0]) {
+                    result = range;
+                }
             }
         }
-        return highSize;
+        return result;
     }
 
     public static Camera.Size getOptimalPreviewSize(List<Camera.Size> sizes, int w, int h) {
@@ -3403,7 +3485,7 @@ public class CameraController {
             if (cameraThread.latch != null) {
                 cameraThread.latch.countDown();
             }
-            return null;
+            return cameraThread.openResult;
         }
     }
 
@@ -3558,13 +3640,15 @@ public class CameraController {
         public int currentRotation = ROTATION_NOT_SPECIFIED;
 
         public OrientationListener(Context context) {
-            super(context, SensorManager.SENSOR_DELAY_NORMAL, TimeUnit.SECONDS.toMillis(2));
+            super(context, SensorManager.SENSOR_DELAY_NORMAL, TimeUnit.SECONDS.toMillis(2), 10);
         }
 
         @Override
         protected void doAction(int orientation) {
-            currentRotation = calculateCameraDisplayOrientation(orientation);
-//            setCameraDisplayOrientation(orientation);
+            currentRotation = calculateCameraRotation(orientation);
+            if (!isCameraBusy()) {
+                setCameraRotation(orientation);
+            }
         }
     }
 

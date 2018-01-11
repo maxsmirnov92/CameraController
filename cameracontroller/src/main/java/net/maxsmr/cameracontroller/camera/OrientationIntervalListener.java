@@ -9,7 +9,6 @@ import net.maxsmr.commonutils.graphic.GraphicUtils;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.concurrent.TimeUnit;
 
 // TODO move to common
 public abstract class OrientationIntervalListener extends OrientationEventListener {
@@ -18,46 +17,63 @@ public abstract class OrientationIntervalListener extends OrientationEventListen
 
     public static final int NOTIFY_INTERVAL_NOT_SPECIFIED = -1;
 
-    public static final long DEFAULT_NOTIFY_INTERVAL = TimeUnit.SECONDS.toMillis(1);
+    public static final int NOTIFY_DIFF_THRESHOLD_NOT_SPECIFIED = -1;
 
     private final long notifyInterval;
+
+    private final int notifyDiffThreshold;
 
     private long previousNotifyTime = 0;
 
     private int previousRotation = ROTATION_NOT_SPECIFIED;
 
+    private int previousFixedRotation = ROTATION_NOT_SPECIFIED;
+
     public OrientationIntervalListener(Context context) {
-        this(context, SensorManager.SENSOR_DELAY_NORMAL, DEFAULT_NOTIFY_INTERVAL);
+        this(context, SensorManager.SENSOR_DELAY_NORMAL, NOTIFY_INTERVAL_NOT_SPECIFIED, NOTIFY_DIFF_THRESHOLD_NOT_SPECIFIED);
     }
 
-    public OrientationIntervalListener(Context context, long interval) {
-        this(context, SensorManager.SENSOR_DELAY_NORMAL, interval);
+    public OrientationIntervalListener(Context context, long interval, int diffThreshold) {
+        this(context, SensorManager.SENSOR_DELAY_NORMAL, interval, diffThreshold);
     }
 
-    public OrientationIntervalListener(Context context, int rate, long interval) {
+    public OrientationIntervalListener(Context context, int rate, long interval, int diffThreshold) {
         super(context, rate);
         if (!(interval == NOTIFY_INTERVAL_NOT_SPECIFIED || interval > 0)) {
             throw new IllegalArgumentException("incorrect notify interval: " + interval);
         }
+        if (!(diffThreshold == NOTIFY_DIFF_THRESHOLD_NOT_SPECIFIED || diffThreshold > 0)) {
+            throw new IllegalArgumentException("incorrect notify diff threshold: " + interval);
+        }
         notifyInterval = interval;
+        notifyDiffThreshold = diffThreshold;
     }
 
     public int getPreviousRotation() {
         return previousRotation;
     }
 
-    public void setPreviousRotation(int previousRotation) {
-        if (previousRotation == ROTATION_NOT_SPECIFIED || previousRotation >= 0 && previousRotation < 360) {
-            this.previousRotation = previousRotation;
+    public int getPreviousFixedRotation() {
+        return previousFixedRotation;
+    }
+
+    public void setPreviousFixedRotation(int previousFixedRotation) {
+        if (previousFixedRotation == ROTATION_NOT_SPECIFIED || previousFixedRotation >= 0 && previousFixedRotation < 360) {
+            this.previousFixedRotation = previousFixedRotation;
         }
     }
 
     @Override
     public void onOrientationChanged(int orientation) {
-        long currentTime = System.currentTimeMillis();
-        if (notifyInterval == NOTIFY_INTERVAL_NOT_SPECIFIED || previousNotifyTime == 0 || currentTime - previousNotifyTime >= notifyInterval) {
-            doAction(orientation);
-            previousNotifyTime = currentTime;
+        if (orientation >= 0 && orientation < 360) {
+            long currentTime = System.currentTimeMillis();
+            if (notifyInterval == NOTIFY_INTERVAL_NOT_SPECIFIED || previousNotifyTime == 0 || currentTime - previousNotifyTime >= notifyInterval) {
+                if (notifyDiffThreshold == NOTIFY_DIFF_THRESHOLD_NOT_SPECIFIED || previousRotation == ROTATION_NOT_SPECIFIED || Math.abs(orientation - previousRotation) >= notifyDiffThreshold) {
+                    doAction(orientation);
+                    previousNotifyTime = currentTime;
+                    previousRotation = orientation;
+                }
+            }
         }
     }
 
