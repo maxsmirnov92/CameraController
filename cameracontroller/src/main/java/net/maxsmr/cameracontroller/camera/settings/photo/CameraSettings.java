@@ -2,12 +2,12 @@ package net.maxsmr.cameracontroller.camera.settings.photo;
 
 import android.hardware.Camera.Size;
 
-import java.io.Serializable;
-
 import net.maxsmr.cameracontroller.camera.settings.ColorEffect;
 import net.maxsmr.cameracontroller.camera.settings.FlashMode;
 import net.maxsmr.cameracontroller.camera.settings.FocusMode;
 import net.maxsmr.cameracontroller.camera.settings.video.record.VideoSettings;
+
+import java.io.Serializable;
 
 public class CameraSettings implements Serializable {
 
@@ -77,24 +77,16 @@ public class CameraSettings implements Serializable {
         return previewFormat;
     }
 
-    public boolean setPreviewFormat(ImageFormat previewFormat) {
-        if (previewFormat == null || previewFormat.isPictureFormat()) {
-            this.previewFormat = previewFormat;
-            return true;
-        }
-        return false;
+    public void setPreviewFormat(ImageFormat previewFormat) {
+        this.previewFormat = previewFormat;
     }
 
     public ImageFormat getPictureFormat() {
         return pictureFormat;
     }
 
-    public boolean setPictureFormat(ImageFormat pictureFormat) {
-        if (pictureFormat == null || pictureFormat.isPictureFormat()) {
-            this.pictureFormat = pictureFormat;
-            return true;
-        }
-        return false;
+    public void setPictureFormat(ImageFormat pictureFormat) {
+        this.pictureFormat = pictureFormat;
     }
 
     public int getPictureWidth() {

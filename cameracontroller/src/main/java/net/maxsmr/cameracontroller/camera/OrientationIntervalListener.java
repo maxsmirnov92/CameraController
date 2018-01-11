@@ -68,7 +68,19 @@ public abstract class OrientationIntervalListener extends OrientationEventListen
         if (orientation >= 0 && orientation < 360) {
             long currentTime = System.currentTimeMillis();
             if (notifyInterval == NOTIFY_INTERVAL_NOT_SPECIFIED || previousNotifyTime == 0 || currentTime - previousNotifyTime >= notifyInterval) {
-                if (notifyDiffThreshold == NOTIFY_DIFF_THRESHOLD_NOT_SPECIFIED || previousRotation == ROTATION_NOT_SPECIFIED || Math.abs(orientation - previousRotation) >= notifyDiffThreshold) {
+                int diff = 0;
+                if (previousRotation != ROTATION_NOT_SPECIFIED) {
+                    if (orientation >= 0 && orientation < 90 && previousRotation >= 270 && previousRotation < 360) {
+                        int currentRotationFixed = orientation + 360;
+                        diff = Math.abs(currentRotationFixed - previousRotation);
+                    } else if (orientation >= 270 && orientation < 360 && previousRotation >= 0 && previousRotation < 90) {
+                        int previousRotationFixed = previousRotation + 360;
+                        diff = Math.abs(orientation - previousRotationFixed);
+                    } else {
+                        diff = Math.abs(orientation - previousRotation);
+                    }
+                }
+                if (notifyDiffThreshold == NOTIFY_DIFF_THRESHOLD_NOT_SPECIFIED || previousRotation == ROTATION_NOT_SPECIFIED || diff >= notifyDiffThreshold) {
                     doAction(orientation);
                     previousNotifyTime = currentTime;
                     previousRotation = orientation;

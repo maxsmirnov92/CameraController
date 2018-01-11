@@ -64,13 +64,29 @@ public enum ImageFormat {
         return -1;
     }
 
-    public boolean isPreviewFormat() {
-        return (this == ImageFormat.NV21 || this == ImageFormat.NV16 || this == ImageFormat.YUY2 || this == ImageFormat.YV12);
-    }
-
-    public boolean isPictureFormat() {
-        return (this == ImageFormat.JPEG || this == ImageFormat.NV16 || this == ImageFormat.NV21 || this == ImageFormat.RGB_565
-                || this == ImageFormat.YUY2 || this == ImageFormat.YV12);
+    public int getImageFormatValue() {
+        int value = -1;
+        switch (this) {
+            case JPEG:
+                value = android.graphics.ImageFormat.JPEG;
+                break;
+            case RGB_565:
+                value = android.graphics.ImageFormat.RGB_565;
+                break;
+            case NV16:
+                value = android.graphics.ImageFormat.NV16;
+                break;
+            case NV21:
+                value = android.graphics.ImageFormat.NV21;
+                break;
+            case YUY2:
+                value = android.graphics.ImageFormat.YUY2;
+                break;
+            case YV12:
+                value = android.graphics.ImageFormat.YV12;
+                break;
+        }
+        return value;
     }
 
     public static ImageFormat fromValue(int value) {
