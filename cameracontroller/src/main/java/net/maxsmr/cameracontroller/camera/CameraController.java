@@ -29,7 +29,6 @@ import android.support.annotation.Nullable;
 import android.support.v4.util.Pair;
 import android.text.TextUtils;
 import android.util.DisplayMetrics;
-import android.view.Surface;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.ViewGroup.LayoutParams;
@@ -77,6 +76,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 import static net.maxsmr.cameracontroller.camera.OrientationIntervalListener.ROTATION_NOT_SPECIFIED;
+import static net.maxsmr.cameracontroller.camera.OrientationIntervalListener.getCurrentDisplayOrientation;
 import static net.maxsmr.cameracontroller.camera.settings.photo.CameraSettings.DEFAULT_IMAGE_FORMAT;
 import static net.maxsmr.cameracontroller.camera.settings.photo.CameraSettings.DEFAULT_PREVIEW_FORMAT;
 
@@ -746,7 +746,7 @@ public class CameraController {
 
                     final int resultDegrees = calculateCameraRotation(displayDegrees);
 
-                    int previousRotation = orientationListener.getPreviousFixedRotation();
+                    int previousRotation = orientationListener.getLastCorrectedRotation();
 
                     if (previousRotation == ROTATION_NOT_SPECIFIED || previousRotation != resultDegrees) {
                         logger.debug("camera rotation displayDegrees: " + resultDegrees);
@@ -761,7 +761,7 @@ public class CameraController {
                     }
 
                     if (result) {
-                        orientationListener.setPreviousFixedRotation(displayDegrees);
+                        orientationListener.setLastCorrectedRotation(displayDegrees);
                     }
                 }
             }
@@ -780,7 +780,7 @@ public class CameraController {
 
         int result = 0;
 
-        int rotation = getCorrectedDegrees(displayDegrees);
+        int rotation = OrientationListener.getCorrectedDisplayRotation(displayDegrees);
 
         synchronized (sync) {
 
@@ -805,7 +805,7 @@ public class CameraController {
     public int calculateCameraRotation(int displayDegrees) {
         int result = 0;
 
-        int rotation = getCorrectedDegrees(displayDegrees);
+        int rotation = OrientationListener.getCorrectedDisplayRotation(displayDegrees);
 
         rotation = (rotation + 45) / 90 * 90;
 
@@ -825,41 +825,6 @@ public class CameraController {
             }
         }
 
-        return result;
-    }
-
-    public int getCurrentDisplayOrientation() {
-        int degrees = 0;
-        final int rotation = ((WindowManager) context.getSystemService(Context.WINDOW_SERVICE)).getDefaultDisplay().getRotation();
-        switch (rotation) {
-            case Surface.ROTATION_0:
-                degrees = 0;
-                break;
-            case Surface.ROTATION_90:
-                degrees = 90;
-                break;
-            case Surface.ROTATION_180:
-                degrees = 180;
-                break;
-            case Surface.ROTATION_270:
-                degrees = 270;
-                break;
-        }
-        return degrees;
-    }
-
-
-    private static int getCorrectedDegrees(int degrees) {
-        int result = 0;
-        if (degrees >= 0 && degrees < 90) {
-            result = 0;
-        } else if (degrees >= 90 && degrees < 180) {
-            result = 90;
-        } else if (degrees >= 180 && degrees < 270) {
-            result = 180;
-        } else if (degrees >= 270 && degrees < 360) {
-            result = 270;
-        }
         return result;
     }
 
@@ -962,8 +927,8 @@ public class CameraController {
             }
 
             setCameraSettings(cameraSettings);
-            int currentRotation = orientationListener.getPreviousRotation();
-            setCameraRotation(currentRotation != ROTATION_NOT_SPECIFIED? currentRotation : getCurrentDisplayOrientation());
+            int currentRotation = orientationListener.getLastRotation();
+            setCameraRotation(currentRotation != ROTATION_NOT_SPECIFIED? currentRotation : getCurrentDisplayOrientation(context));
 
             cameraSurfaceHolderCallback = new CameraSurfaceHolderCallback();
             cameraSurfaceHolder.addCallback(cameraSurfaceHolderCallback);
@@ -988,14 +953,16 @@ public class CameraController {
     }
 
     private void initCameraInfo() {
-        if (cameraInfo == null) {
-            if (isCameraOpened()) {
-                cameraInfo = new CameraInfo();
-                try {
-                    Camera.getCameraInfo(cameraId, cameraInfo);
-                } catch (RuntimeException e) {
-                    logger.error("a RuntimeException occurred during getCameraInfo()", e);
-                    cameraInfo = null;
+        synchronized (sync) {
+            if (cameraInfo == null) {
+                if (isCameraOpened()) {
+                    cameraInfo = new CameraInfo();
+                    try {
+                        Camera.getCameraInfo(cameraId, cameraInfo);
+                    } catch (RuntimeException e) {
+                        logger.error("a RuntimeException occurred during getCameraInfo()", e);
+                        cameraInfo = null;
+                    }
                 }
             }
         }
@@ -1123,6 +1090,7 @@ public class CameraController {
         }
     }
 
+    /** restart preview and reset callback */
     public boolean restartPreview() {
         boolean result = true;
         if (isPreviewStated) {
@@ -1151,7 +1119,10 @@ public class CameraController {
 
         stopPreview();
 
-        setCameraDisplayOrientation(getCurrentDisplayOrientation());
+//        int rotation = orientationListener.getLastRotation();
+        setCameraDisplayOrientation(/*rotation != ROTATION_NOT_SPECIFIED &&
+                android.provider.Settings.System.getInt(context.getContentResolver(), Settings.System.ACCELEROMETER_ROTATION, 0) == 1?
+                rotation : */getCurrentDisplayOrientation(context));
 
         setCameraPreviewSize(getOptimalPreviewSize(getSupportedPreviewSizes(), surfaceWidth, surfaceHeight));
 
@@ -1393,11 +1364,6 @@ public class CameraController {
 
         synchronized (sync) {
 
-            if (camera == null) {
-                logger.error("camera is null");
-                return null;
-            }
-
             if (!isCameraLocked()) {
                 logger.error("can't get parameters: camera is not locked");
                 return null;
@@ -1510,11 +1476,6 @@ public class CameraController {
 
         synchronized (sync) {
 
-            if (camera == null) {
-                logger.error("camera is null");
-                return null;
-            }
-
             if (!isCameraLocked()) {
                 logger.error("can't get parameters: camera is not locked");
                 return null;
@@ -1582,11 +1543,6 @@ public class CameraController {
     public Pair<Double, Double> getCameraPreviewFpsRange() {
 
         synchronized (sync) {
-
-            if (camera == null) {
-                logger.error("camera is null");
-                return null;
-            }
 
             if (!isCameraLocked()) {
                 logger.error("can't get parameters: camera is not locked");
@@ -1759,8 +1715,8 @@ public class CameraController {
                         final int supportedMinFpsScaled = supportedPreviewFpsRanges.get(i)[Parameters.PREVIEW_FPS_MIN_INDEX];
                         final int supportedMaxFpsScaled = supportedPreviewFpsRanges.get(i)[Parameters.PREVIEW_FPS_MAX_INDEX];
 
-                        if (fpsRange[0] >= supportedMinFpsScaled && fpsRange[0] <= supportedMaxFpsScaled && fpsRange[1] >= supportedMinFpsScaled
-                                && fpsRange[1] <= supportedMaxFpsScaled) {
+                        if (fpsRange[0] >= supportedMinFpsScaled && fpsRange[0] <= supportedMaxFpsScaled
+                                && fpsRange[1] >= supportedMinFpsScaled && fpsRange[1] <= supportedMaxFpsScaled) {
                             isPreviewFpsRangeSupported = true;
                             break;
                         }
@@ -1806,7 +1762,6 @@ public class CameraController {
                     previewCallback.updatePreviewFormat(previewFormat);
                 }
                 if (isPreviewStated) {
-                    // restart preview and reset callback
                     restartPreview();
                 }
             }
@@ -2968,8 +2923,8 @@ public class CameraController {
 
             mediaRecorder.setPreviewDisplay(cameraSurfaceView.getHolder().getSurface());
 
-            int currentRotation = orientationListener.getPreviousRotation();
-            mediaRecorder.setOrientationHint(calculateCameraRotation(currentRotation != ROTATION_NOT_SPECIFIED? currentRotation : getCurrentDisplayOrientation()));
+            int currentRotation = orientationListener.getLastRotation();
+            mediaRecorder.setOrientationHint(calculateCameraRotation(currentRotation != ROTATION_NOT_SPECIFIED? currentRotation : getCurrentDisplayOrientation(context)));
 
             try {
                 mediaRecorder.prepare();
@@ -3178,6 +3133,11 @@ public class CameraController {
         previewCallback.setAllowLogging(enable);
     }
 
+    @NonNull
+    public FrameCalculator getFrameCalculator() {
+        return previewCallback;
+    }
+
     private void run(@Nullable Runnable run) {
         if (run != null) {
             if (callbackHandler != null) {
@@ -3288,11 +3248,9 @@ public class CameraController {
     }
 
     private static String getFileExtensionByVideoEncoder(VideoEncoder videoEncoder) {
-
         if (videoEncoder == null) {
             return null;
         }
-
         switch (videoEncoder) {
             case DEFAULT:
             case MPEG_4_SP:
@@ -3490,7 +3448,7 @@ public class CameraController {
         }
     }
 
-    private class CustomPreviewCallback extends FrameCalculator implements Camera.PreviewCallback {
+    protected class CustomPreviewCallback extends FrameCalculator implements Camera.PreviewCallback {
 
         private boolean allowLogging;
 
@@ -3651,7 +3609,7 @@ public class CameraController {
     protected class OrientationListener extends OrientationIntervalListener {
 
         public OrientationListener(Context context) {
-            super(context, SensorManager.SENSOR_DELAY_NORMAL, TimeUnit.SECONDS.toMillis(1), 45);
+            super(context, SensorManager.SENSOR_DELAY_NORMAL, TimeUnit.SECONDS.toMillis(1), OrientationListener.ROTATION_NOT_SPECIFIED);
         }
 
         @Override

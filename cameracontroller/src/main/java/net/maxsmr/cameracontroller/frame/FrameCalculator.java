@@ -15,10 +15,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 public class FrameCalculator implements IPreviewFrameCallback {
 
-    public static final long DEFAULT_NOTIFY_INTERVAL = 1000;
+    public static final long DEFAULT_NOTIFY_INTERVAL = TimeUnit.SECONDS.toMillis(1);
 
     private static Logger mFrameLogger;
 
@@ -51,12 +52,17 @@ public class FrameCalculator implements IPreviewFrameCallback {
      * in ns
      */
     private long mStartIntervalTime;
+    /*
+     * in ns
+     */
     private long mLastFrameTime;
 
     private int mIntervalFrames;
     private int mLastFps;
 
+    /** in ns */
     private final List<Long> mFrameTimesDuringInterval = new ArrayList<>();
+    /** in ns */
     private float mLastAverageFrameTimeDuringInterval;
 
     private long mLastNotifyFramesCount;
@@ -261,7 +267,7 @@ public class FrameCalculator implements IPreviewFrameCallback {
 
                 mStartIntervalTime = 0;
 
-                mLastStats = new FrameStats(mStartPreviewTime, mLastFps, mLastAverageFrameTimeDuringInterval / 1000000, getAverageFpsMethod1(), getAverageFrameTime());
+                mLastStats = new FrameStats(mStartPreviewTime, mLastFps, TimeUnit.NANOSECONDS.toMillis((int) mLastAverageFrameTimeDuringInterval), getAverageFpsMethod1(), getAverageFrameTime());
                 if (mFrameLogger != null) {
                     mFrameLogger.debug("current frame time: " + mLastStats.lastAverageFrameTime +
                             " ms / overall average frame time: " + mLastStats.overallAverageFrameTime + " ms");
@@ -271,10 +277,12 @@ public class FrameCalculator implements IPreviewFrameCallback {
 
             if (mLastStats != null) {
                 if (mNotifyInterval > 0 && (mLastNotifyTime <= 0 || (mEventTime - mLastNotifyTime) >= mNotifyInterval)) {
+                    final FrameStats lastStats = mLastStats;
+                    final long framesSinseLastNotify = mTotalFrames - mLastNotifyFramesCount;
                     mNotifyHandler.post(new Runnable() {
                         @Override
                         public void run() {
-                            mFrameStatsObservable.notifyStatsUpdated(mLastStats, mTotalFrames - mLastNotifyFramesCount);
+                            mFrameStatsObservable.notifyStatsUpdated(lastStats, framesSinseLastNotify);
                         }
                     });
                     mLastNotifyTime = mEventTime;
