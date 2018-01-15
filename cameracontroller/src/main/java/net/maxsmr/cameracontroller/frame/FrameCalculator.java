@@ -17,9 +17,11 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
-public class FrameCalculator implements IPreviewFrameCallback {
+public class FrameCalculator implements IFrameCallback {
 
-    public static final long DEFAULT_NOTIFY_INTERVAL = TimeUnit.SECONDS.toMillis(1);
+    public static final long DEFAULT_CALCULATE_INTERVAL = TimeUnit.SECONDS.toMillis(1);
+
+    public static final long DEFAULT_NOTIFY_INTERVAL = DEFAULT_CALCULATE_INTERVAL;
 
     private static Logger mFrameLogger;
 
@@ -31,46 +33,51 @@ public class FrameCalculator implements IPreviewFrameCallback {
 
     private ExecutorService mCalcExecutor;
 
+    /** in ms */
+    private long mCalculateInterval = DEFAULT_CALCULATE_INTERVAL;
+
+    /** in ms */
     private long mNotifyInterval = DEFAULT_NOTIFY_INTERVAL;
 
     @Nullable
     private FrameStats mLastStats;
 
-    private boolean mPreviewStarted;
+    private boolean mStreamStarted;
+
+    /**
+     * in ms
+     */
+    private long mStartStreamTime;
+
+    /**
+     * in ns
+     */
+    private long mStartIntervalTime;
 
     /**
      * in ms
      */
     private long mLastNotifyTime;
 
-    /**
-     * in ms
-     */
-    private long mStartPreviewTime;
-
-    /**
-     * in ns
-     */
-    private long mStartIntervalTime;
     /*
      * in ns
      */
     private long mLastFrameTime;
 
     private int mIntervalFrames;
-    private int mLastFps;
+    private double mLastFps;
 
     /** in ns */
     private final List<Long> mFrameTimesDuringInterval = new ArrayList<>();
     /** in ns */
-    private float mLastAverageFrameTimeDuringInterval;
+    private double mLastAverageFrameTimeDuringInterval;
 
     private long mLastNotifyFramesCount;
 
     private long mTotalFrames;
     private long mTotalFpsSum;
     private int mTotalFpsCount = 0;
-    private float mTotalFrameTimeSum;
+    private double mTotalFrameTimeSum;
     private int mTotalFrameTimesCount = 0;
 
     public FrameCalculator() {
@@ -86,6 +93,17 @@ public class FrameCalculator implements IPreviewFrameCallback {
         return mFrameStatsObservable;
     }
 
+    public long getCalculateInterval() {
+        return mCalculateInterval;
+    }
+
+    public void setCalculateInterval(long calculateInterval) {
+        if (calculateInterval <= 0) {
+            throw new IllegalArgumentException("incorrect calculate interval: " + calculateInterval);
+        }
+        this.mCalculateInterval = calculateInterval;
+    }
+
     public long getNotifyInterval() {
         return mNotifyInterval;
     }
@@ -94,7 +112,7 @@ public class FrameCalculator implements IPreviewFrameCallback {
         if (notifyInterval < 0) {
             throw new IllegalArgumentException("incorrect notify interval: " + notifyInterval);
         }
-        if (notifyInterval != 0 && notifyInterval < DEFAULT_NOTIFY_INTERVAL) {
+        if (notifyInterval != 0 && notifyInterval < mCalculateInterval) {
             notifyInterval = DEFAULT_NOTIFY_INTERVAL;
         }
         this.mNotifyInterval = notifyInterval;
@@ -112,63 +130,63 @@ public class FrameCalculator implements IPreviewFrameCallback {
         return mLastStats;
     }
 
-    public boolean isPreviewStarted() {
-        return mPreviewStarted;
+    public boolean isStreamStarted() {
+        return mStreamStarted;
     }
 
-    public void notifyPreviewStarted() {
+    public void notifySteamStarted() {
         synchronized (mSync) {
             resetAllCounters();
             startExec();
-            mStartPreviewTime = System.currentTimeMillis();
-            mPreviewStarted = true;
+            mStartStreamTime = System.currentTimeMillis();
+            mStreamStarted = true;
         }
     }
 
-    public void notifyPreviewFinished() {
+    public void notifyStreamFinished() {
         synchronized (mSync) {
             stopExec();
-            mStartPreviewTime = 0;
-            mPreviewStarted = false;
+            mStartStreamTime = 0;
+            mStreamStarted = false;
         }
     }
 
     /**
      * ms
      */
-    public long getStartPreviewTime() {
-        return mStartPreviewTime;
+    public long getStartStreamTime() {
+        return mStartStreamTime;
     }
 
-    public float getLastAverageFrameTimeDuringInterval() {
+    public double getLastAverageFrameTimeDuringInterval() {
         return mLastAverageFrameTimeDuringInterval;
     }
 
     /**
      * ms
      */
-    public float getAverageFrameTime() {
+    public double getAverageFrameTime() {
         return mTotalFrameTimesCount > 0 ? (mTotalFrameTimeSum / mTotalFrameTimesCount) / 1000000 : 0;
     }
 
-    public int getLastFps() {
+    public double getLastFps() {
         return mLastFps;
     }
 
-    public float getAverageFpsMethod1() {
-        return mTotalFpsCount > 0 ? (float) mTotalFpsSum / mTotalFpsCount : mLastFps;
+    public double getAverageFpsMethod1() {
+        return mTotalFpsCount > 0 ? (double) mTotalFpsSum / mTotalFpsCount : mLastFps;
     }
 
-    public float getAverageFpsMethod2() {
+    public double getAverageFpsMethod2() {
         long currentTime = System.currentTimeMillis();
-        long measureTime = mStartPreviewTime > 0 ? (currentTime - mStartPreviewTime) / 1000 : 0;
-        return measureTime > 0 ? (float) mTotalFrames / measureTime : mLastFps;
+        long measureTime = mStartStreamTime > 0 ? (currentTime - mStartStreamTime) / 1000 : 0;
+        return measureTime > 0 ? (double) mTotalFrames / measureTime : mLastFps;
     }
 
     @Override
-    public void onPreviewFrame() {
+    public void onFrame() {
         synchronized (mSync) {
-            if (isPreviewStarted()) {
+            if (isStreamStarted()) {
                 mCalcExecutor.execute(new FrameLogRunnable(System.nanoTime()));
             }
         }
@@ -195,7 +213,7 @@ public class FrameCalculator implements IPreviewFrameCallback {
 
             mLastStats = null;
 
-            mStartPreviewTime = 0;
+            mStartStreamTime = 0;
             mTotalFrames = 0;
 
             mLastFrameTime = 0;
@@ -252,22 +270,24 @@ public class FrameCalculator implements IPreviewFrameCallback {
             mLastFrameTime = mEventTime;
 
             mIntervalFrames++;
-            if (mEventTime - mStartIntervalTime >= 1000000000) {
+            if (mEventTime - mStartIntervalTime >= TimeUnit.MILLISECONDS.toNanos(mCalculateInterval)) {
 
-                mLastAverageFrameTimeDuringInterval = (float) MathUtils.avg(mFrameTimesDuringInterval);
+                double scale = TimeUnit.SECONDS.toMillis(1) / (double) mCalculateInterval;
+
+                mLastAverageFrameTimeDuringInterval = MathUtils.avg(mFrameTimesDuringInterval);
                 mTotalFrameTimeSum += mLastAverageFrameTimeDuringInterval;
                 mTotalFrameTimesCount++;
                 mFrameTimesDuringInterval.clear();
 
                 mTotalFrames += mIntervalFrames;
-                mLastFps = mIntervalFrames;
+                mLastFps = mIntervalFrames * scale;
                 mTotalFpsSum += mLastFps;
                 mTotalFpsCount++;
                 mIntervalFrames = 0;
 
                 mStartIntervalTime = 0;
 
-                mLastStats = new FrameStats(mStartPreviewTime, mLastFps, TimeUnit.NANOSECONDS.toMillis((int) mLastAverageFrameTimeDuringInterval), getAverageFpsMethod1(), getAverageFrameTime());
+                mLastStats = new FrameStats(mStartStreamTime, mLastFps, TimeUnit.NANOSECONDS.toMillis((int) mLastAverageFrameTimeDuringInterval), getAverageFpsMethod1(), getAverageFrameTime());
                 if (mFrameLogger != null) {
                     mFrameLogger.debug("current frame time: " + mLastStats.lastAverageFrameTime +
                             " ms / overall average frame time: " + mLastStats.overallAverageFrameTime + " ms");
@@ -276,7 +296,7 @@ public class FrameCalculator implements IPreviewFrameCallback {
             }
 
             if (mLastStats != null) {
-                if (mNotifyInterval > 0 && (mLastNotifyTime <= 0 || (mEventTime - mLastNotifyTime) >= mNotifyInterval)) {
+                if (mNotifyInterval == 0 || (mLastNotifyTime <= 0 || (mEventTime - mLastNotifyTime) >= mNotifyInterval)) {
                     final FrameStats lastStats = mLastStats;
                     final long framesSinseLastNotify = mTotalFrames - mLastNotifyFramesCount;
                     mNotifyHandler.post(new Runnable() {

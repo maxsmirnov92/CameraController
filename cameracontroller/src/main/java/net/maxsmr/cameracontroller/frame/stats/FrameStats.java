@@ -7,15 +7,15 @@ public final class FrameStats implements Parcelable {
 
     public final long previewStartTime;
 
-    public final float lastFps;
+    public final double lastFps;
 
-    public final float lastAverageFrameTime;
+    public final double lastAverageFrameTime;
 
-    public final float overallAverageFps;
+    public final double overallAverageFps;
 
-    public final float overallAverageFrameTime;
+    public final double overallAverageFrameTime;
 
-    public FrameStats(long previewStartTime, float lastFps, float lastAverageFrameTime, float overallAverageFps, float overallAverageFrameTime) {
+    public FrameStats(long previewStartTime, double lastFps, double lastAverageFrameTime, double overallAverageFps, double overallAverageFrameTime) {
         this.previewStartTime = previewStartTime;
         this.lastFps = lastFps;
         this.lastAverageFrameTime = lastAverageFrameTime;
@@ -25,10 +25,10 @@ public final class FrameStats implements Parcelable {
 
     protected FrameStats(Parcel in) {
         previewStartTime = in.readLong();
-        lastFps = in.readFloat();
-        lastAverageFrameTime = in.readFloat();
-        overallAverageFps = in.readFloat();
-        overallAverageFrameTime = in.readFloat();
+        lastFps = in.readDouble();
+        lastAverageFrameTime = in.readDouble();
+        overallAverageFps = in.readDouble();
+        overallAverageFrameTime = in.readDouble();
     }
 
     public static final Creator<FrameStats> CREATOR = new Creator<FrameStats>() {
@@ -50,18 +50,26 @@ public final class FrameStats implements Parcelable {
 
         FrameStats that = (FrameStats) o;
 
-        if (Float.compare(that.lastFps, lastFps) != 0) return false;
-        if (Float.compare(that.lastAverageFrameTime, lastAverageFrameTime) != 0) return false;
-        if (Float.compare(that.overallAverageFps, overallAverageFps) != 0) return false;
-        return Float.compare(that.overallAverageFrameTime, overallAverageFrameTime) == 0;
+        if (previewStartTime != that.previewStartTime) return false;
+        if (Double.compare(that.lastFps, lastFps) != 0) return false;
+        if (Double.compare(that.lastAverageFrameTime, lastAverageFrameTime) != 0) return false;
+        if (Double.compare(that.overallAverageFps, overallAverageFps) != 0) return false;
+        return Double.compare(that.overallAverageFrameTime, overallAverageFrameTime) == 0;
     }
 
     @Override
     public int hashCode() {
-        int result = (lastFps != +0.0f ? Float.floatToIntBits(lastFps) : 0);
-        result = 31 * result + (lastAverageFrameTime != +0.0f ? Float.floatToIntBits(lastAverageFrameTime) : 0);
-        result = 31 * result + (overallAverageFps != +0.0f ? Float.floatToIntBits(overallAverageFps) : 0);
-        result = 31 * result + (overallAverageFrameTime != +0.0f ? Float.floatToIntBits(overallAverageFrameTime) : 0);
+        int result;
+        long temp;
+        result = (int) (previewStartTime ^ (previewStartTime >>> 32));
+        temp = Double.doubleToLongBits(lastFps);
+        result = 31 * result + (int) (temp ^ (temp >>> 32));
+        temp = Double.doubleToLongBits(lastAverageFrameTime);
+        result = 31 * result + (int) (temp ^ (temp >>> 32));
+        temp = Double.doubleToLongBits(overallAverageFps);
+        result = 31 * result + (int) (temp ^ (temp >>> 32));
+        temp = Double.doubleToLongBits(overallAverageFrameTime);
+        result = 31 * result + (int) (temp ^ (temp >>> 32));
         return result;
     }
 
@@ -83,9 +91,9 @@ public final class FrameStats implements Parcelable {
     @Override
     public void writeToParcel(Parcel parcel, int i) {
         parcel.writeLong(previewStartTime);
-        parcel.writeFloat(lastFps);
-        parcel.writeFloat(lastAverageFrameTime);
-        parcel.writeFloat(overallAverageFps);
-        parcel.writeFloat(overallAverageFrameTime);
+        parcel.writeDouble(lastFps);
+        parcel.writeDouble(lastAverageFrameTime);
+        parcel.writeDouble(overallAverageFps);
+        parcel.writeDouble(overallAverageFrameTime);
     }
 }

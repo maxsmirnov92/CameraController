@@ -92,6 +92,8 @@ public class CameraController {
     public static final int CAMERA_ID_BACK = Camera.CameraInfo.CAMERA_FACING_BACK;
     public static final int CAMERA_ID_FRONT = Camera.CameraInfo.CAMERA_FACING_FRONT;
 
+    public static final int CAMERA_ERROR_UNKNOWN = -1;
+
     public static final int ZOOM_MIN = 0;
     public static final int ZOOM_MAX = -1;
     public static final int ZOOM_NOT_SPECIFIED = -2;
@@ -155,7 +157,8 @@ public class CameraController {
 
     private boolean isOrientationListened = false;
 
-    private boolean isSurfaceCreated = false;
+    // flag is useless because callbacks may not be called (when camera is not opened, for e.g)
+//    private boolean isSurfaceCreated = false;
 
     private boolean enableChangeSurfaceViewSize = false;
     private boolean isFullscreenSurfaceViewSize = false;
@@ -369,20 +372,15 @@ public class CameraController {
             return null;
         }
 
-        Pair<Double, Double> previewFpsRange = getCameraPreviewFpsRange();
+        Pair<Integer, Integer> previewFpsRange = getCameraPreviewFpsRange();
         return new CameraSettings(ImageFormat.fromValue(params.getPreviewFormat()), ImageFormat.fromValue(params.getPictureFormat()),
                 params.getPictureSize(), params.getJpegQuality(),
                 Build.VERSION.SDK_INT >= Build.VERSION_CODES.ICE_CREAM_SANDWICH_MR1 && params.getVideoStabilization(),
-                previewFpsRange != null ? previewFpsRange.second.intValue() : 0);
+                previewFpsRange != null ? previewFpsRange.first : 0);
     }
 
     @Nullable
     public CameraSettings getLowCameraSettings() {
-
-        if (camera == null) {
-            logger.error("can't get parameters: camera is null");
-            return null;
-        }
 
         if (!isCameraLocked()) {
             logger.error("can't get parameters: camera is not locked");
@@ -404,11 +402,6 @@ public class CameraController {
     @Nullable
     public CameraSettings getMediumCameraSettings() {
 
-        if (camera == null) {
-            logger.error("can't get parameters: camera is null");
-            return null;
-        }
-
         if (!isCameraLocked()) {
             logger.error("can't get parameters: camera is not locked");
             return null;
@@ -427,11 +420,6 @@ public class CameraController {
 
     @Nullable
     public CameraSettings getHighCameraSettings() {
-
-        if (camera == null) {
-            logger.error("can't get parameters: camera is null");
-            return null;
-        }
 
         if (!isCameraLocked()) {
             logger.error("can't get parameters: camera is not locked");
@@ -474,7 +462,7 @@ public class CameraController {
      * indicates whether surface is fully initialized
      */
     public boolean isSurfaceCreated() {
-        return (cameraSurfaceView != null && isSurfaceCreated && !cameraSurfaceView.getHolder().isCreating() && cameraSurfaceView.getHolder().getSurface() != null);
+        return (cameraSurfaceView != null /*&& isSurfaceCreated*/ && !cameraSurfaceView.getHolder().isCreating() && cameraSurfaceView.getHolder().getSurface() != null);
     }
 
     public boolean isPreviewCallbackBufferUsing() {
@@ -493,11 +481,6 @@ public class CameraController {
         }
 
         if (queueSize != callbackBufferQueueSize) {
-
-            if (isMediaRecorderRecording) {
-                logger.error("can't change preview callback buffer size: media recorder is recording");
-                return false;
-            }
 
             if (!use) {
                 callbackBufferQueueSize = 0;
@@ -588,7 +571,7 @@ public class CameraController {
                 // startPreview();
             }
 
-            isSurfaceCreated = true;
+//            isSurfaceCreated = true;
 
             surfaceHolderCallbacks.notifySurfaceCreated(holder);
         }
@@ -612,10 +595,11 @@ public class CameraController {
             surfaceWidth = 0;
             surfaceHeight = 0;
 
-            isSurfaceCreated = false;
+//            isSurfaceCreated = false;
 
             stopPreview();
 
+            // optional
             synchronized (sync) {
                 try {
                     camera.setPreviewDisplay(null);
@@ -928,7 +912,7 @@ public class CameraController {
 
             setCameraSettings(cameraSettings);
             int currentRotation = orientationListener.getLastRotation();
-            setCameraRotation(currentRotation != ROTATION_NOT_SPECIFIED? currentRotation : getCurrentDisplayOrientation(context));
+            setCameraRotation(currentRotation != ROTATION_NOT_SPECIFIED ? currentRotation : getCurrentDisplayOrientation(context));
 
             cameraSurfaceHolderCallback = new CameraSurfaceHolderCallback();
             cameraSurfaceHolder.addCallback(cameraSurfaceHolderCallback);
@@ -1045,6 +1029,10 @@ public class CameraController {
         }
     }
 
+    public boolean isPreviewStated() {
+        return isPreviewStated;
+    }
+
     /**
      * preview callbacks in camera will be resetted
      */
@@ -1058,7 +1046,7 @@ public class CameraController {
                     try {
                         camera.startPreview();
                         isPreviewStated = true;
-                        previewCallback.notifyPreviewStarted();
+                        previewCallback.notifySteamStarted();
                         result = true;
                     } catch (RuntimeException e) {
                         logger.error("a RuntimeException occurred during startPreview()", e);
@@ -1090,7 +1078,9 @@ public class CameraController {
         }
     }
 
-    /** restart preview and reset callback */
+    /**
+     * restart preview and reset callback
+     */
     public boolean restartPreview() {
         boolean result = true;
         if (isPreviewStated) {
@@ -1136,6 +1126,11 @@ public class CameraController {
         return true;
     }
 
+    public boolean reopenCamera(int cameraId, @NonNull SurfaceView surfaceView, @Nullable CameraSettings cameraSettings, Handler callbackHandler) {
+        releaseCamera();
+        return openCamera(cameraId, surfaceView, cameraSettings, callbackHandler);
+    }
+
     /**
      * for the first time must be called at onCreate() or onResume() handling surfaceCreated(), surfaceChanged() and
      * surfaceDestroyed() callbacks
@@ -1148,8 +1143,8 @@ public class CameraController {
         setCallbackHandler(callbackHandler);
 
         if (isCameraThreadRunning()) {
-            logger.error("cameraThread is already running");
-            return false;
+            logger.error(CameraThread.class.getSimpleName() + " is already running");
+            return isCameraOpened();
         }
 
         // can use new HandlerThread or Looper in new Thread
@@ -1180,7 +1175,7 @@ public class CameraController {
         // return createCamera(cameraId, surfaceView, cameraSettings);
     }
 
-    public boolean releaseCamera() {
+    public void releaseCamera() {
         logger.debug("releaseCamera()");
 
         checkReleased();
@@ -1188,8 +1183,7 @@ public class CameraController {
         synchronized (sync) {
 
             if (!isCameraOpened()) {
-                logger.debug("camera is already not opened");
-                return true;
+                return;
             }
 
             if (isMediaRecorderRecording) {
@@ -1235,8 +1229,6 @@ public class CameraController {
 
             previewCallback.updatePreviewFormat(null);
             previewCallback.updatePreviewSize(null);
-
-            return true;
         }
     }
 
@@ -1505,11 +1497,6 @@ public class CameraController {
                 return false;
             }
 
-            if (camera == null) {
-                logger.error("camera is null");
-                return false;
-            }
-
             if (!isCameraLocked()) {
                 logger.error("can't get/set parameters: camera is not locked");
                 return false;
@@ -1540,7 +1527,7 @@ public class CameraController {
      * @return range the minimum and maximum preview fps
      */
     @Nullable
-    public Pair<Double, Double> getCameraPreviewFpsRange() {
+    public Pair<Integer, Integer> getCameraPreviewFpsRange() {
 
         synchronized (sync) {
 
@@ -1560,7 +1547,7 @@ public class CameraController {
 
             int[] scaledRange = new int[2];
             params.getPreviewFpsRange(scaledRange);
-            return new Pair<>(scaledRange[0] / 1000d, scaledRange[1] / 1000d);
+            return new Pair<>((int) (scaledRange[0] / 1000d), (int) (scaledRange[1] / 1000d));
         }
     }
 
@@ -2432,11 +2419,6 @@ public class CameraController {
 
     public VideoSettings getLowVideoSettings() {
 
-        if (camera == null) {
-            logger.error("can't get parameters: camera is null");
-            return null;
-        }
-
         if (!isCameraLocked()) {
             logger.error("can't get parameters: camera is not locked");
             return null;
@@ -2455,11 +2437,6 @@ public class CameraController {
     }
 
     public VideoSettings getMediumVideoSettings() {
-
-        if (camera == null) {
-            logger.error("can't get parameters: camera is null");
-            return null;
-        }
 
         if (!isCameraLocked()) {
             logger.error("can't get parameters: camera is not locked");
@@ -2480,11 +2457,6 @@ public class CameraController {
 
     public VideoSettings getHighVideoSettings() {
 
-        if (camera == null) {
-            logger.error("can't get parameters: camera is null");
-            return null;
-        }
-
         if (!isCameraLocked()) {
             logger.error("can't get parameters: camera is not locked");
             return null;
@@ -2504,24 +2476,15 @@ public class CameraController {
 
     public boolean isVideoSizeSupported(int width, int height) {
 
-        if (camera == null) {
-            logger.error("can't get parameters: camera is null");
-            return false;
-        }
-
         if (!isCameraLocked()) {
             logger.error("can't get parameters: camera is not locked");
             return false;
         }
 
         boolean isVideoSizeSupported = false;
-
         final List<Camera.Size> supportedVideoSizes = getSupportedVideoSizes();
-
         if (supportedVideoSizes != null) {
-
             if (width > 0 && height > 0) {
-
                 for (int i = 0; i < supportedVideoSizes.size(); i++) {
                     if (width == supportedVideoSizes.get(i).width && height == supportedVideoSizes.get(i).height) {
                         isVideoSizeSupported = true;
@@ -2530,18 +2493,17 @@ public class CameraController {
                 }
             }
         }
-
-        return (isVideoSizeSupported);
+        return isVideoSizeSupported;
     }
 
     /**
-     * @param profile         if is not null, it will be setted to recorder (re-filled if necessary); otherwise single
-     *                        parameters will be setted in appropriate order without profile
-     * @param videoSettings   must not be null
-     * @param previewFpsRange if is not null and requested fps falls within the range, it will be applied
+     * @param profile       if is not null, it will be setted to recorder (re-filled if necessary); otherwise single
+     *                      parameters will be setted in appropriate order without profile
+     * @param videoSettings must not be null
+     * @param fpsRange      if is not null and requested fps falls within the range, it will be applied
      */
-    private boolean setMediaRecorderParams(CamcorderProfile profile, VideoSettings videoSettings, Pair<Double, Double> previewFpsRange) {
-        logger.debug("setMediaRecorderParams(), profile=" + profile + ", videoSettings=" + videoSettings + ", previewFpsRange=" + previewFpsRange);
+    private boolean setMediaRecorderParams(CamcorderProfile profile, VideoSettings videoSettings, @Nullable Pair<Integer, Integer> fpsRange) {
+        logger.debug("setMediaRecorderParams(), profile=" + profile + ", videoSettings=" + videoSettings + ", fpsRange=" + fpsRange);
 
         if (videoSettings == null) {
             logger.error("can't set media recorder parameters: videoSettings is null");
@@ -2558,31 +2520,32 @@ public class CameraController {
             return false;
         }
 
-        int videoFrameRate = profile != null ? profile.videoFrameRate : VideoSettings.VIDEO_FRAME_RATE_MAX;
+        int videoFrameRate;
 
-        if (previewFpsRange != null && videoSettings.getVideoFrameRate() >= previewFpsRange.first
-                && videoSettings.getVideoFrameRate() <= previewFpsRange.second) {
+        if (profile == null) {
             videoFrameRate = videoSettings.getVideoFrameRate();
-        } else if (videoSettings.getVideoFrameRate() == VideoSettings.VIDEO_FRAME_RATE_AUTO) {
+            if ((fpsRange == null || videoFrameRate < fpsRange.first || videoFrameRate > fpsRange.second) ||
+                    videoFrameRate == VideoSettings.VIDEO_FRAME_RATE_AUTO) {
 
-            if (previewCallback.getLastFps() == 0) {
-                // wait for count
-                try {
-                    Thread.sleep(2000);
-                } catch (InterruptedException e) {
-                    logger.error("an InterruptedException occurred during sleep()", e);
-                    Thread.currentThread().interrupt();
+                if (previewCallback.allowLogging) {
+                    if (Double.compare(previewCallback.getLastFps(), 0) == 0 && Thread.currentThread() != cameraThread) {
+                        // wait for count
+                        try {
+                            Thread.sleep(2000);
+                        } catch (InterruptedException e) {
+                            logger.error("an InterruptedException occurred during sleep()", e);
+                            Thread.currentThread().interrupt();
+                        }
+                    }
+                    videoFrameRate = (int) previewCallback.getLastFps();
+                }
+
+                if (videoFrameRate == 0) {
+                    videoFrameRate = VideoSettings.VIDEO_FRAME_RATE_MAX;
                 }
             }
-
-            if (previewFpsRange != null && previewCallback.getLastFps() >= previewFpsRange.first &&
-                    previewCallback.getLastFps() <= previewFpsRange.second) {
-                videoFrameRate = previewCallback.getLastFps();
-            } else {
-                videoFrameRate = VideoSettings.VIDEO_FRAME_RATE_MAX;
-            }
         } else {
-            logger.error("incorrect video frame rate: " + videoSettings.getVideoFrameRate());
+            videoFrameRate = profile.videoFrameRate;
         }
 
         // set sources -> setProfile
@@ -2594,18 +2557,20 @@ public class CameraController {
 
             logger.debug(camcorderProfileToString(profile));
 
-            if (profile.videoCodec != videoSettings.getVideoEncoder().getValue()) {
+            if (videoSettings.getVideoEncoder() != VideoEncoder.DEFAULT && profile.videoCodec != videoSettings.getVideoEncoder().getValue()) {
                 logger.debug("videoCodec in profile (" + profile.videoCodec + ") is not the same as in videoSettings ("
                         + videoSettings.getVideoEncoder().getValue() + "), changing...");
                 profile.videoCodec = videoSettings.getVideoEncoder().getValue();
                 profile.fileFormat = getOutputFormatByVideoEncoder(videoSettings.getVideoEncoder());
             }
+            videoSettings.setVideoEncoder(VideoEncoder.fromValue(profile.videoCodec));
 
-            if (profile.audioCodec != videoSettings.getAudioEncoder().getValue()) {
+            if (videoSettings.getAudioEncoder() != AudioEncoder.DEFAULT && profile.audioCodec != videoSettings.getAudioEncoder().getValue()) {
                 logger.debug("audioCodec in profile (" + profile.audioCodec + ") is not the same as in videoSettings ("
                         + videoSettings.getAudioEncoder().getValue() + "), changing...");
                 profile.audioCodec = videoSettings.getAudioEncoder().getValue();
             }
+            videoSettings.setAudioEncoder(AudioEncoder.fromValue(profile.audioCodec));
 
             if (!videoSettings.isAudioDisabled()) {
 
@@ -2628,12 +2593,6 @@ public class CameraController {
                 mediaRecorder.setVideoSize(profile.videoFrameWidth, profile.videoFrameHeight);
                 mediaRecorder.setVideoEncodingBitRate(profile.videoBitRate);
                 mediaRecorder.setVideoEncoder(profile.videoCodec);
-            }
-
-            if (profile.videoFrameRate != videoFrameRate) {
-                logger.debug("videoFrameRate in profile (" + profile.videoFrameRate + ") is not the same as in videoSettings ("
-                        + videoFrameRate + "), setting manually...");
-                // profile.videoFrameRate = videoFrameRate;
                 mediaRecorder.setVideoFrameRate(videoFrameRate);
             }
 
@@ -2670,6 +2629,18 @@ public class CameraController {
         return true;
     }
 
+    public boolean hasLastPhotoFile() {
+        return GraphicUtils.canDecodeImage(lastPhotoFile);
+    }
+
+    public boolean hasLastVideoFile() {
+        return FileHelper.isFileCorrect(lastVideoFile);
+    }
+
+    public boolean hasLastPreviewFile() {
+        return GraphicUtils.canDecodeImage(lastPreviewFile);
+    }
+
     public File getLastPhotoFile() {
         return lastPhotoFile;
     }
@@ -2680,10 +2651,6 @@ public class CameraController {
 
     public File getLastPreviewFile() {
         return lastPreviewFile;
-    }
-
-    public long getLastPreviewFileSize() {
-        return FileHelper.isFileCorrect(lastPreviewFile) ? lastPreviewFile.length() : 0;
     }
 
     /**
@@ -2726,11 +2693,6 @@ public class CameraController {
 
         synchronized (sync) {
 
-            if (camera == null) {
-                logger.error("camera is null");
-                return false;
-            }
-
             if (!isCameraLocked()) {
                 logger.error("can't get/set parameters: camera is not locked");
                 return false;
@@ -2746,14 +2708,20 @@ public class CameraController {
 
             params.setRecordingHint(hint);
 
+            boolean result = false;
+
             try {
                 camera.setParameters(params);
+                result = true;
             } catch (RuntimeException e) {
                 logger.error("a RuntimeException occurred during setParameters()", e);
-                return false;
             }
 
-            return true;
+            if (result && isPreviewStated) {
+                restartPreview();
+            }
+
+            return result;
         }
     }
 
@@ -2780,75 +2748,52 @@ public class CameraController {
 
             this.currentVideoSettings = videoSettings;
 
-            final CamcorderProfile profile;
+            CamcorderProfile profile = null;
 
             // for video file name
-            final Pair<Integer, Integer> resolution;
+            Pair<Integer, Integer> resolution = null;
 
-            if (videoSettings.getQuality() == VideoQuality.DEFAULT) {
 
-                profile = null;
-
-                if (isVideoSizeSupported(videoSettings.getVideoFrameWidth(), videoSettings.getVideoFrameHeight())) {
-
-                    logger.debug("VIDEO size " + videoSettings.getVideoFrameWidth() + "x" + videoSettings.getVideoFrameHeight()
-                            + " is supported");
-
-                } else {
-                    logger.error("VIDEO size " + videoSettings.getVideoFrameWidth() + "x" + videoSettings.getVideoFrameHeight()
-                            + " is NOT supported, getting medium...");
-
-                    final VideoSettings mediumVideoSettings = getMediumVideoSettings();
-                    videoSettings.setVideoFrameSize(mediumVideoSettings.getVideoFrameWidth(), mediumVideoSettings.getVideoFrameHeight());
-                }
-
-                resolution = new Pair<>(videoSettings.getVideoFrameWidth(), videoSettings.getVideoFrameHeight());
-
-            } else {
+            if (videoSettings.getQuality() != VideoQuality.DEFAULT) {
 
                 if (CamcorderProfile.hasProfile(cameraId, videoSettings.getQuality().getValue())) {
-
                     logger.info("profile " + videoSettings.getQuality().getValue() + " is supported for camera with id " + cameraId
                             + ", getting...");
                     profile = CamcorderProfile.get(cameraId, videoSettings.getQuality().getValue());
-
-                    resolution = null;
-
                 } else {
-
                     logger.error("profile " + videoSettings.getQuality().getValue() + " is NOT supported, changing quality to default...");
                     videoSettings.setQuality(cameraId, VideoQuality.DEFAULT);
-                    profile = null;
-
-                    if (isVideoSizeSupported(videoSettings.getVideoFrameWidth(), videoSettings.getVideoFrameHeight())) {
-
-                        logger.debug("VIDEO size " + videoSettings.getVideoFrameWidth() + "x" + videoSettings.getVideoFrameHeight()
-                                + " is supported");
-
-                    } else {
-                        logger.error("VIDEO size " + videoSettings.getVideoFrameWidth() + "x" + videoSettings.getVideoFrameHeight()
-                                + " is NOT supported, getting medium...");
-
-                        final VideoSettings mediumVideoSettings = getMediumVideoSettings();
-                        videoSettings.setVideoFrameSize(mediumVideoSettings.getVideoFrameWidth(), mediumVideoSettings.getVideoFrameHeight());
-                    }
-
-                    resolution = new Pair<>(videoSettings.getVideoFrameWidth(), videoSettings.getVideoFrameHeight());
                 }
-
             }
 
-            final Pair<Double, Double> previewFpsRange = getCameraPreviewFpsRange();
+
+            if (profile == null) {
+                if (isVideoSizeSupported(videoSettings.getVideoFrameWidth(), videoSettings.getVideoFrameHeight())) {
+                    logger.debug("VIDEO size " + videoSettings.getVideoFrameWidth() + "x" + videoSettings.getVideoFrameHeight()
+                            + " is supported");
+                } else {
+                    logger.error("VIDEO size " + videoSettings.getVideoFrameWidth() + "x" + videoSettings.getVideoFrameHeight()
+                            + " is NOT supported, getting medium...");
+                    final VideoSettings mediumVideoSettings = getMediumVideoSettings();
+                    videoSettings.setVideoFrameSize(mediumVideoSettings.getVideoFrameWidth(), mediumVideoSettings.getVideoFrameHeight());
+                }
+                resolution = new Pair<>(videoSettings.getVideoFrameWidth(), videoSettings.getVideoFrameHeight());
+            }
+
+            final Pair<Integer, Integer> previewFpsRange = getCameraPreviewFpsRange();
+
+            final boolean wasStarted = isPreviewStated;
 
             stopPreview();
 
-            if (callbackBufferQueueSize > 0)
-                setRecordingHint(true);
+            setRecordingHint(true);
 
             if (!unlockCamera()) {
                 logger.error("unlocking camera failed");
-                if (startPreview()) {
-                    setPreviewCallback();
+                if (wasStarted) {
+                    if (startPreview()) {
+                        setPreviewCallback();
+                    }
                 }
                 return false;
             }
@@ -2860,6 +2805,9 @@ public class CameraController {
                 @Override
                 public void onError(MediaRecorder mediaRecorder, int what, int extra) {
                     logger.error("onError(), what=" + what + ", extra=" + extra);
+                    if (isReleased()) {
+                        return;
+                    }
                     stopRecordVideo();
                     mediaRecorderErrorListeners.notifyMediaRecorderError(what, extra);
                 }
@@ -2874,6 +2822,9 @@ public class CameraController {
                         case MediaRecorder.MEDIA_RECORDER_INFO_MAX_FILESIZE_REACHED:
                         case MediaRecorder.MEDIA_RECORDER_INFO_MAX_DURATION_REACHED:
                             logger.debug("onInfo(), what=" + what + ", extra=" + extra);
+                            if (isReleased()) {
+                                return;
+                            }
                             recordLimitReachedListeners.notifyRecordLimitReached(stopRecordVideo());
                             break;
                     }
@@ -2887,8 +2838,7 @@ public class CameraController {
 
             mediaRecorder.setVideoSource(MediaRecorder.VideoSource.CAMERA);
 
-            if (isStoreLocationEnabled() && lastLocation != null
-                    && (Double.compare(lastLocation.getLatitude(), 0.0d) != 0 || Double.compare(lastLocation.getLongitude(), 0.0d) != 0)) {
+            if (isStoreLocationEnabled() && lastLocation != null) {
                 if (Build.VERSION.SDK_INT > Build.VERSION_CODES.ICE_CREAM_SANDWICH) {
                     logger.debug("set video location: latitude " + lastLocation.getLatitude() + " longitude " + lastLocation.getLongitude()
                             + " accuracy " + lastLocation.getAccuracy());
@@ -2924,7 +2874,7 @@ public class CameraController {
             mediaRecorder.setPreviewDisplay(cameraSurfaceView.getHolder().getSurface());
 
             int currentRotation = orientationListener.getLastRotation();
-            mediaRecorder.setOrientationHint(calculateCameraRotation(currentRotation != ROTATION_NOT_SPECIFIED? currentRotation : getCurrentDisplayOrientation(context)));
+            mediaRecorder.setOrientationHint(calculateCameraRotation(currentRotation != ROTATION_NOT_SPECIFIED ? currentRotation : getCurrentDisplayOrientation(context)));
 
             try {
                 mediaRecorder.prepare();
@@ -3264,17 +3214,12 @@ public class CameraController {
     }
 
     private static int getOutputFormatByVideoEncoder(VideoEncoder videoEncoder) {
-        int format = -1;
+        int format = MediaRecorder.OutputFormat.DEFAULT;
         if (videoEncoder != null) {
             switch (videoEncoder) {
-                case DEFAULT:
-                    format = MediaRecorder.OutputFormat.DEFAULT;
-                    break;
-
                 case H263:
                     format = MediaRecorder.OutputFormat.THREE_GPP;
                     break;
-
                 case H264:
                 case MPEG_4_SP:
                     format = MediaRecorder.OutputFormat.MPEG_4;
@@ -3495,14 +3440,14 @@ public class CameraController {
         }
 
         @Override
-        public void notifyPreviewStarted() {
-            super.notifyPreviewStarted();
+        public void notifySteamStarted() {
+            super.notifySteamStarted();
             previewFrameListeners.notifyPreviewStarted();
         }
 
         @Override
-        public void notifyPreviewFinished() {
-            super.notifyPreviewFinished();
+        public void notifyStreamFinished() {
+            super.notifyStreamFinished();
             previewFrameListeners.notifyPreviewFinished();
         }
 
@@ -3510,6 +3455,10 @@ public class CameraController {
         @Override
         public void onPreviewFrame(final byte[] data, final Camera camera) {
 //            logger.debug("onPreviewFrame(), data (length)=" + (data != null ? data.length : 0));
+
+            if (isReleased()) {
+                return;
+            }
 
             if (data == null) {
                 logger.error("data is null");
@@ -3521,7 +3470,7 @@ public class CameraController {
             }
 
             if (allowLogging) {
-                onPreviewFrame();
+                onFrame();
             }
 
             if (isCameraLocked() && callbackBufferQueueSize > 0) {
