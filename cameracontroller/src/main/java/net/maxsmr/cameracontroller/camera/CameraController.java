@@ -473,27 +473,22 @@ public class CameraController {
         return callbackBufferQueueSize;
     }
 
-    public boolean usePreviewCallbackWithBuffer(boolean use, int queueSize) {
-        logger.debug("usePreviewCallbackWithBuffer(), use=" + use + ", queueSize=" + queueSize);
+    public boolean setPreviewCallbackWithBuffer(int queueSize) {
+        logger.debug("setPreviewCallbackWithBuffer(), queueSize=" + queueSize);
 
-        if (use && queueSize == 0 || queueSize < 0) {
-            throw new IllegalArgumentException("incorrect queueSize: " + queueSize);
+        if (queueSize < 0) {
+            logger.error("incorrect queueSize: " + queueSize);
+            return false;
         }
 
-        if (queueSize != callbackBufferQueueSize) {
-
-            if (!use) {
-                callbackBufferQueueSize = 0;
-            } else {
-                if (queueSize > 0)
-                    callbackBufferQueueSize = queueSize;
-            }
-
-            if (isPreviewStated) {
-                restartPreview();
+        synchronized (sync) {
+            if (queueSize != callbackBufferQueueSize) {
+                callbackBufferQueueSize = queueSize;
+                if (isPreviewStated) {
+                    restartPreview();
+                }
             }
         }
-
         return true;
     }
 
@@ -2363,8 +2358,7 @@ public class CameraController {
         public void onPictureTaken(final byte[] data, Camera camera) {
             logger.debug("onPictureTaken()");
 
-            if (isReleased) {
-                logger.error(CameraController.class.getSimpleName() + " is released");
+            if (isReleased()) {
                 return;
             }
 
@@ -3465,19 +3459,22 @@ public class CameraController {
                 return;
             }
 
-            if (data.length != expectedCallbackBufSize && expectedCallbackBufSize > 0) {
-                logger.warn("frame data size (" + data.length + ") is not equal expected (" + expectedCallbackBufSize + ")");
-            }
+            synchronized (sync) {
 
-            if (allowLogging) {
-                onFrame();
-            }
+                if (data.length != expectedCallbackBufSize && expectedCallbackBufSize > 0) {
+                    logger.warn("frame data size (" + data.length + ") is not equal expected (" + expectedCallbackBufSize + ")");
+                }
 
-            if (isCameraLocked() && callbackBufferQueueSize > 0) {
-                camera.addCallbackBuffer(data);
-            }
+                if (allowLogging) {
+                    onFrame();
+                }
 
-            previewFrameListeners.notifyPreviewFrame(data);
+                if (isCameraLocked() && callbackBufferQueueSize > 0) {
+                    camera.addCallbackBuffer(data);
+                }
+
+                previewFrameListeners.notifyPreviewFrame(data);
+            }
         }
     }
 

@@ -2,16 +2,10 @@ package net.maxsmr.cameracontroller.camera;
 
 import android.content.Context;
 import android.hardware.SensorManager;
-import android.media.ExifInterface;
 import android.support.annotation.NonNull;
 import android.view.OrientationEventListener;
 import android.view.Surface;
 import android.view.WindowManager;
-
-import net.maxsmr.commonutils.graphic.GraphicUtils;
-
-import java.io.File;
-import java.io.IOException;
 
 // TODO move to common
 public abstract class OrientationIntervalListener extends OrientationEventListener {
@@ -110,6 +104,7 @@ public abstract class OrientationIntervalListener extends OrientationEventListen
     protected abstract void doAction(int orientation);
 
     public static int getCorrectedDisplayRotation(int rotation) {
+        rotation = rotation % 360;
         int result = ROTATION_NOT_SPECIFIED;
         if (rotation >= 315 && rotation < 360 || rotation >= 0 && rotation < 45) {
             result = 0;
@@ -123,45 +118,6 @@ public abstract class OrientationIntervalListener extends OrientationEventListen
         return result;
     }
 
-    // TODO move
-    public static int getExifOrientationByRotationAngle(int degrees) {
-        int orientation = 0;
-        if (degrees >= 0 && degrees < 90) {
-            orientation = ExifInterface.ORIENTATION_NORMAL;
-        } else if (degrees >= 90 && degrees < 180) {
-            orientation = ExifInterface.ORIENTATION_ROTATE_90;
-        } else if (degrees >= 180 && degrees < 270) {
-            orientation = ExifInterface.ORIENTATION_ROTATE_180;
-        } else if (degrees >= 270 && degrees < 360) {
-            orientation = ExifInterface.ORIENTATION_ROTATE_270;
-        }
-        return orientation;
-    }
-
-    // TODO move
-    public static boolean writeExifOrientation(File imageFile, int degrees) {
-
-        if (!GraphicUtils.canDecodeImage(imageFile)) {
-//            logger.error("incorrect picture file: " + imageFile);
-            return false;
-        }
-
-        if (!(degrees >= 0 && degrees < 360)) {
-//            logger.warn("incorrect angle: " + degrees);
-            return false;
-        }
-
-        try {
-
-            ExifInterface exif = new ExifInterface(imageFile.getAbsolutePath());
-            exif.setAttribute(ExifInterface.TAG_ORIENTATION, String.valueOf(getExifOrientationByRotationAngle(degrees)));
-            exif.saveAttributes();
-            return true;
-        } catch (IOException e) {
-//            logger.error("an IOException occurred", e);
-            return false;
-        }
-    }
 
     // TODO move to GuiUtils
     public static int getCurrentDisplayOrientation(@NonNull Context context) {
