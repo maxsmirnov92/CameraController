@@ -964,7 +964,7 @@ public class CameraController {
 
     @Nullable
     public Camera getOpenedCameraInstance() {
-        return isCameraOpened() && isCameraLocked() && !isMediaRecorderRecording ? camera : null;
+        return isCameraOpened()? camera : null;
     }
 
     public int getOpenedCameraId() {
@@ -2339,11 +2339,22 @@ public class CameraController {
         }
     }
 
-    private void takePhotoInternal(boolean writeToFile) {
+    private void takePhotoInternal(final boolean writeToFile) {
         muteSound(true);
         setCurrentCameraState(CameraState.TAKING_PHOTO);
         isPreviewStated = false;
-        camera.takePicture(isMuteSoundEnabled ? null : shutterCallbackStub, null, new CustomPictureCallback(writeToFile));
+        try {
+            executor.submit(new Callable<Boolean>() {
+                @Override
+                public Boolean call() throws Exception {
+                    camera.takePicture(isMuteSoundEnabled ? null : shutterCallbackStub, null, new CustomPictureCallback(writeToFile));
+                    return true;
+                }
+            }).get(EXECUTOR_CALL_TIMEOUT, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            logger.error("an Exception occurred during get()", e);
+            reopenCamera(cameraId, cameraSurfaceView, getCurrentCameraSettings(), callbackHandler);
+        }
     }
 
     private class CustomPictureCallback implements Camera.PictureCallback {
