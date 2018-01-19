@@ -107,6 +107,8 @@ public class CameraController {
 
     private static final int EXECUTOR_CALL_TIMEOUT = 10;
 
+    private static final long AUTO_FOCUS_TIMEOUT = TimeUnit.SECONDS.toMillis(3);
+
     private static Logger logger;
 
     private final Object sync = new Object();
@@ -167,6 +169,8 @@ public class CameraController {
     private int surfaceHeight = 0;
 
     private boolean isPreviewStated = false;
+
+    private Runnable autoFocusResetRunnable;
 
     @Nullable
     private Handler callbackHandler;
@@ -2262,6 +2266,11 @@ public class CameraController {
 
         checkReleased();
 
+        if (!TextUtils.isEmpty(photoFileName) && photoFileName.contains(File.separator)) {
+            logger.error("photo file name " + photoFileName + " contains path separators!");
+            return false;
+        }
+
         synchronized (sync) {
 
             if (currentCameraState != CameraState.IDLE) {
@@ -2315,17 +2324,30 @@ public class CameraController {
                 this.lastPhotoFile = null;
             }
 
-            if (focusMode != null && (focusMode == FocusMode.AUTO || focusMode == FocusMode.MACRO)) {
+            if (focusMode == FocusMode.AUTO) {
+
+                cancelResetAutoFocusCallback();
 
                 camera.cancelAutoFocus();
 
-                logger.info("taking photo with auto focus...");
+                cameraThread.addTask(autoFocusResetRunnable = new Runnable() {
 
+                    @Override
+                    public void run() {
+                        logger.error("auto focus callback not triggered");
+                        autoFocusResetRunnable = null;
+                        camera.cancelAutoFocus();
+                        takePhotoInternal(writeToFile);
+                    }
+                }, AUTO_FOCUS_TIMEOUT);
+
+                logger.info("taking photo with auto focus...");
                 camera.autoFocus(new AutoFocusCallback() {
 
                     @Override
                     public void onAutoFocus(boolean success, Camera camera) {
                         logger.debug("onAutoFocus(), success=" + true);
+                        cancelResetAutoFocusCallback();
                         takePhotoInternal(writeToFile);
                     }
                 });
@@ -2354,6 +2376,13 @@ public class CameraController {
         } catch (Exception e) {
             logger.error("an Exception occurred during get()", e);
             reopenCamera(cameraId, cameraSurfaceView, getCurrentCameraSettings(), callbackHandler);
+        }
+    }
+
+    private void cancelResetAutoFocusCallback() {
+        if (autoFocusResetRunnable != null) {
+            cameraThread.removeTask(autoFocusResetRunnable);
+            autoFocusResetRunnable = null;
         }
     }
 
