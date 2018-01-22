@@ -181,6 +181,7 @@ public class CameraController {
 
     private CameraInfo cameraInfo;
 
+    @NonNull
     private CameraState currentCameraState = CameraState.IDLE;
 
     private boolean isCameraLocked = true;
@@ -194,6 +195,8 @@ public class CameraController {
     private Location lastLocation;
 
     private VideoSettings currentVideoSettings;
+
+    private long lastTakePhotoStartTime;
 
     private File lastPhotoFile;
 
@@ -312,9 +315,9 @@ public class CameraController {
         return currentCameraState;
     }
 
-    private void setCurrentCameraState(CameraState state) {
+    private void setCurrentCameraState(@NonNull CameraState state) {
         synchronized (sync) {
-            if (state != null && state != currentCameraState) {
+            if (state != currentCameraState) {
                 currentCameraState = state;
                 logger.info("STATE : " + currentCameraState);
                 cameraStateListeners.notifyStateChanged(currentCameraState);
@@ -859,6 +862,8 @@ public class CameraController {
                 return false;
             }
 
+            long startOpenTime = System.currentTimeMillis();
+
             logger.debug("opening camera " + cameraId + "...");
             try {
                 camera = Camera.open(cameraId);
@@ -930,6 +935,8 @@ public class CameraController {
 
                 setupPreview();
             }
+
+            logger.debug("camera open time: " + (System.currentTimeMillis() - startOpenTime) + " ms");
 
             return true;
         }
@@ -1191,6 +1198,8 @@ public class CameraController {
                 }
             }
 
+            setFlashMode(FlashMode.OFF);
+
             unlistenOrientationChanges();
 
             setCurrentCameraState(CameraState.IDLE);
@@ -1233,15 +1242,6 @@ public class CameraController {
 
     private void muteSound(boolean mute) {
         if (isMuteSoundEnabled) {
-            AudioManager mgr = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
-            // mgr.setStreamMute(AudioManager.STREAM_SYSTEM, mute);
-            if (mute) {
-                previousStreamVolume = mgr.getStreamVolume(AudioManager.STREAM_SYSTEM);
-                mgr.setStreamVolume(AudioManager.STREAM_SYSTEM, 0, AudioManager.FLAG_REMOVE_SOUND_AND_VIBRATE);
-            } else if (previousStreamVolume >= 0) {
-                mgr.setStreamVolume(AudioManager.STREAM_SYSTEM, previousStreamVolume, 0);
-            }
-
             if (android.os.Build.VERSION.SDK_INT >= 17) {
                 try {
                     if (isCameraLocked()) {
@@ -1251,6 +1251,17 @@ public class CameraController {
                     }
                 } catch (RuntimeException e) {
                     logger.error("a RuntimeException occurred during enableShutterSound()", e);
+                }
+            } else {
+                AudioManager mgr = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
+                if (mgr != null) {
+                    // mgr.setStreamMute(AudioManager.STREAM_SYSTEM, mute);
+                    if (mute) {
+                        previousStreamVolume = mgr.getStreamVolume(AudioManager.STREAM_SYSTEM);
+                        mgr.setStreamVolume(AudioManager.STREAM_SYSTEM, 0, AudioManager.FLAG_REMOVE_SOUND_AND_VIBRATE);
+                    } else if (previousStreamVolume >= 0) {
+                        mgr.setStreamVolume(AudioManager.STREAM_SYSTEM, previousStreamVolume, 0);
+                    }
                 }
             }
         }
@@ -2288,6 +2299,8 @@ public class CameraController {
                 return false;
             }
 
+            lastTakePhotoStartTime = System.currentTimeMillis();
+
             CameraSettings currentCameraSettings = getCurrentCameraSettings();
 
             if (currentCameraSettings == null) {
@@ -2324,6 +2337,8 @@ public class CameraController {
                 this.lastPhotoFile = null;
             }
 
+            setCurrentCameraState(CameraState.TAKING_PHOTO);
+
             if (focusMode == FocusMode.AUTO) {
 
                 cancelResetAutoFocusCallback();
@@ -2335,9 +2350,13 @@ public class CameraController {
                     @Override
                     public void run() {
                         logger.error("auto focus callback not triggered");
-                        autoFocusResetRunnable = null;
-                        camera.cancelAutoFocus();
-                        takePhotoInternal(writeToFile);
+                        synchronized (sync) {
+                            autoFocusResetRunnable = null;
+                            if (isCameraLocked()) {
+                                camera.cancelAutoFocus();
+                                takePhotoInternal(writeToFile);
+                            }
+                        }
                     }
                 }, AUTO_FOCUS_TIMEOUT);
 
@@ -2363,13 +2382,13 @@ public class CameraController {
 
     private void takePhotoInternal(final boolean writeToFile) {
         muteSound(true);
-        setCurrentCameraState(CameraState.TAKING_PHOTO);
         isPreviewStated = false;
         try {
             executor.submit(new Callable<Boolean>() {
                 @Override
                 public Boolean call() throws Exception {
-                    camera.takePicture(isMuteSoundEnabled ? null : shutterCallbackStub, null, new CustomPictureCallback(writeToFile));
+                    camera.takePicture(isMuteSoundEnabled ? null : shutterCallbackStub,
+                            new PictureRawCallback(), new PictureReadyCallback(writeToFile));
                     return true;
                 }
             }).get(EXECUTOR_CALL_TIMEOUT, TimeUnit.SECONDS);
@@ -2386,17 +2405,38 @@ public class CameraController {
         }
     }
 
-    private class CustomPictureCallback implements Camera.PictureCallback {
+    private class PictureRawCallback implements Camera.PictureCallback {
+
+        @Override
+        public void onPictureTaken(byte[] data, Camera camera) {
+            logger.debug(PictureRawCallback.class.getSimpleName() + " :: onPictureTaken()");
+
+            if (isReleased()) {
+                return;
+            }
+
+            synchronized (sync) {
+
+                if (currentCameraState != CameraState.TAKING_PHOTO) {
+                    throw new IllegalStateException("current camera state is not " + CameraState.TAKING_PHOTO);
+                }
+
+                photoReadyListeners.notifyRawDataReady(data);
+            }
+        }
+    }
+
+    private class PictureReadyCallback implements Camera.PictureCallback {
 
         private final boolean writeToFile;
 
-        CustomPictureCallback(boolean writeToFile) {
+        PictureReadyCallback(boolean writeToFile) {
             this.writeToFile = writeToFile;
         }
 
         @Override
         public void onPictureTaken(final byte[] data, Camera camera) {
-            logger.debug("onPictureTaken()");
+            logger.debug(PictureReadyCallback.class.getSimpleName() + " :: onPictureTaken()");
 
             if (isReleased()) {
                 return;
@@ -2428,10 +2468,13 @@ public class CameraController {
 
                 muteSound(false);
 
+                long elapsedTime = lastTakePhotoStartTime >= 0? System.currentTimeMillis() - lastTakePhotoStartTime : 0;
+                elapsedTime = elapsedTime < 0? 0 : elapsedTime;
+
                 if (writeToFile) {
-                    photoReadyListeners.notifyPhotoFileReady(lastPhotoFile);
+                    photoReadyListeners.notifyPhotoFileReady(lastPhotoFile, elapsedTime);
                 } else {
-                    photoReadyListeners.notifyPhotoDataReady(data);
+                    photoReadyListeners.notifyPhotoDataReady(data, elapsedTime);
                 }
             }
 
@@ -3501,19 +3544,23 @@ public class CameraController {
 
             synchronized (sync) {
 
+                final long frameTime;
+
                 if (data.length != expectedCallbackBufSize && expectedCallbackBufSize > 0) {
                     logger.warn("frame data size (" + data.length + ") is not equal expected (" + expectedCallbackBufSize + ")");
                 }
 
                 if (allowLogging) {
-                    onFrame();
+                    frameTime = onFrame();
+                } else {
+                    frameTime = System.nanoTime();
                 }
 
                 if (isCameraLocked() && callbackBufferQueueSize > 0) {
                     camera.addCallbackBuffer(data);
                 }
 
-                previewFrameListeners.notifyPreviewFrame(data);
+                previewFrameListeners.notifyPreviewFrame(data, frameTime);
             }
         }
     }
@@ -3704,13 +3751,13 @@ public class CameraController {
 
     protected class PhotoReadyObservable extends Observable<IPhotoReadyListener> {
 
-        void notifyPhotoFileReady(final File photoFile) {
+        void notifyRawDataReady(final byte[] rawData) {
             Runnable run = new Runnable() {
                 @Override
                 public void run() {
                     synchronized (mObservers) {
                         for (IPhotoReadyListener l : mObservers) {
-                            l.onPhotoFileReady(photoFile);
+                            l.onRawDataReady(rawData);
                         }
                     }
                 }
@@ -3718,13 +3765,27 @@ public class CameraController {
             run(run);
         }
 
-        void notifyPhotoDataReady(final byte[] photoData) {
+        void notifyPhotoFileReady(final File photoFile, final long elapsedTime) {
             Runnable run = new Runnable() {
                 @Override
                 public void run() {
                     synchronized (mObservers) {
                         for (IPhotoReadyListener l : mObservers) {
-                            l.onPhotoDataReady(photoData);
+                            l.onPhotoFileReady(photoFile, elapsedTime);
+                        }
+                    }
+                }
+            };
+            run(run);
+        }
+
+        void notifyPhotoDataReady(final byte[] photoData, final long elapsedTime) {
+            Runnable run = new Runnable() {
+                @Override
+                public void run() {
+                    synchronized (mObservers) {
+                        for (IPhotoReadyListener l : mObservers) {
+                            l.onPhotoDataReady(photoData, elapsedTime);
                         }
                     }
                 }
@@ -3812,14 +3873,14 @@ public class CameraController {
             run(run);
         }
 
-        void notifyPreviewFrame(final byte[] data) {
+        void notifyPreviewFrame(final byte[] data, final long time) {
             Runnable run = new Runnable() {
                 @Override
                 public void run() {
                     if (data != null && data.length > 0) {
                         synchronized (mObservers) {
                             for (IPreviewFrameListener l : mObservers) {
-                                l.onPreviewFrame(data);
+                                l.onPreviewFrame(data, time);
                             }
                         }
                     }
@@ -3846,9 +3907,11 @@ public class CameraController {
 
     public interface IPhotoReadyListener {
 
-        void onPhotoFileReady(File photoFile);
+        void onRawDataReady(byte[] rawData);
 
-        void onPhotoDataReady(byte[] photoData);
+        void onPhotoFileReady(File photoFile, long time);
+
+        void onPhotoDataReady(byte[] photoData, long time);
     }
 
     public interface IRecordLimitReachedListener {
@@ -3876,6 +3939,9 @@ public class CameraController {
 
         void onPreviewFinished();
 
-        void onPreviewFrame(@NonNull byte[] data);
+        /**
+         * @param time frame time in ns
+         */
+        void onPreviewFrame(@NonNull byte[] data, long time);
     }
 }

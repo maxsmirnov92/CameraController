@@ -184,12 +184,15 @@ public class FrameCalculator implements IFrameCallback {
     }
 
     @Override
-    public void onFrame() {
+    public long onFrame() {
+        long time = 0;
         synchronized (mSync) {
             if (isStreamStarted()) {
-                mCalcExecutor.execute(new FrameLogRunnable(System.nanoTime()));
+                time = System.nanoTime();
+                mCalcExecutor.execute(new FrameLogRunnable(time));
             }
         }
+        return time;
     }
 
     private boolean isExecRunning() {
