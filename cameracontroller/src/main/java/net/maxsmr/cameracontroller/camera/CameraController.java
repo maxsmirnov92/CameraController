@@ -159,6 +159,8 @@ public class CameraController {
 
     private boolean isOrientationListened = false;
 
+    private boolean isOrientationListenerEnabled = true;
+
     // flag is useless because callbacks may not be called (when camera is not opened, for e.g)
 //    private boolean isSurfaceCreated = false;
 
@@ -215,6 +217,10 @@ public class CameraController {
     private boolean enableStoreLocation = DEFAULT_ENABLE_STORE_LOCATION;
 
     private boolean enableGestureScaling = DEFAULT_ENABLE_GESTURE_SCALING;
+
+    private int lastCameraRotation = ROTATION_NOT_SPECIFIED;
+
+    private int lastCameraDisplayRotation= ROTATION_NOT_SPECIFIED;
 
     /**
      * used for storing and running runnables to save preview for given video
@@ -691,7 +697,7 @@ public class CameraController {
         surfaceView.setLayoutParams(layoutParams);
     }
 
-    private boolean setCameraDisplayOrientation(int displayDegrees) {
+    public boolean setCameraDisplayOrientation(int displayDegrees) {
         logger.debug("setCameraDisplayOrientation(), displayDegrees=" + displayDegrees);
 
         boolean result = false;
@@ -702,10 +708,11 @@ public class CameraController {
 
                 if (isCameraOpened() && isCameraLocked()) {
 
-                    final int resultDegrees = calculateCameraDisplayOrientation(displayDegrees);
+                    int resultDegrees = calculateCameraDisplayOrientation(displayDegrees);
 
                     try {
                         camera.setDisplayOrientation(resultDegrees);
+                        lastCameraDisplayRotation = resultDegrees;
                         result = true;
                     } catch (RuntimeException e) {
                         logger.error("a RuntimeException occurred during setDisplayOrientation()", e);
@@ -719,7 +726,7 @@ public class CameraController {
         return result;
     }
 
-    private boolean setCameraRotation(int displayDegrees) {
+    public boolean setCameraRotation(int displayDegrees) {
         logger.debug("setCameraRotation(), displayDegrees=" + displayDegrees);
 
         boolean result = false;
@@ -732,7 +739,7 @@ public class CameraController {
 
                     final int resultDegrees = calculateCameraRotation(displayDegrees);
 
-                    int previousRotation = orientationListener.getLastCorrectedRotation();
+                    int previousRotation = getLastCameraRotation();
 
                     if (previousRotation == ROTATION_NOT_SPECIFIED || previousRotation != resultDegrees) {
                         logger.debug("camera rotation displayDegrees: " + resultDegrees);
@@ -740,14 +747,14 @@ public class CameraController {
                             final Parameters params = camera.getParameters();
                             params.setRotation(resultDegrees);
                             camera.setParameters(params);
+                            lastCameraRotation = resultDegrees;
+                            if (isOrientationListened) {
+                                orientationListener.setLastCorrectedRotation(resultDegrees);
+                            }
                             result = true;
                         } catch (RuntimeException e) {
                             logger.error("a RuntimeException occurred during get/set camera parameters", e);
                         }
-                    }
-
-                    if (result) {
-                        orientationListener.setLastCorrectedRotation(displayDegrees);
                     }
                 }
             }
@@ -768,18 +775,20 @@ public class CameraController {
 
         int rotation = OrientationListener.getCorrectedDisplayRotation(displayDegrees);
 
-        synchronized (sync) {
+        if (rotation != OrientationListener.ROTATION_NOT_SPECIFIED) {
+            synchronized (sync) {
 
-            if (isCameraOpened()) {
+                if (isCameraOpened()) {
 
-                initCameraInfo();
+                    initCameraInfo();
 
-                if (cameraInfo != null) {
-                    if (cameraInfo.facing == Camera.CameraInfo.CAMERA_FACING_FRONT) {
-                        result = (cameraInfo.orientation + rotation) % 360;
-                        result = (360 - result) % 360;  // compensate the mirror
-                    } else {  // back-facing
-                        result = (cameraInfo.orientation - rotation + 360) % 360;
+                    if (cameraInfo != null) {
+                        if (cameraInfo.facing == Camera.CameraInfo.CAMERA_FACING_FRONT) {
+                            result = (cameraInfo.orientation + rotation) % 360;
+                            result = (360 - result) % 360;  // compensate the mirror
+                        } else {  // back-facing
+                            result = (cameraInfo.orientation - rotation + 360) % 360;
+                        }
                     }
                 }
             }
@@ -793,19 +802,21 @@ public class CameraController {
 
         int rotation = OrientationListener.getCorrectedDisplayRotation(displayDegrees);
 
-        rotation = (rotation + 45) / 90 * 90;
+        if (rotation != OrientationListener.ROTATION_NOT_SPECIFIED) {
+            rotation = (rotation + 45) / 90 * 90;
 
-        synchronized (sync) {
+            synchronized (sync) {
 
-            if (isCameraOpened()) {
+                if (isCameraOpened()) {
 
-                initCameraInfo();
+                    initCameraInfo();
 
-                if (cameraInfo != null) {
-                    if (cameraInfo.facing == CameraInfo.CAMERA_FACING_FRONT) {
-                        result = (cameraInfo.orientation - rotation + 360) % 360;
-                    } else {  // back-facing camera
-                        result = (cameraInfo.orientation + rotation) % 360;
+                    if (cameraInfo != null) {
+                        if (cameraInfo.facing == CameraInfo.CAMERA_FACING_FRONT) {
+                            result = (cameraInfo.orientation - rotation + 360) % 360;
+                        } else {  // back-facing camera
+                            result = (cameraInfo.orientation + rotation) % 360;
+                        }
                     }
                 }
             }
@@ -816,7 +827,7 @@ public class CameraController {
 
     private void listenOrientationChanges() {
         if (orientationListener != null) {
-            if (!isOrientationListened) {
+            if (!isOrientationListened && isCameraOpened()) {
                 try {
                     orientationListener.enable();
                     isOrientationListened = true;
@@ -835,9 +846,9 @@ public class CameraController {
                 } catch (Exception e) {
                     logger.error("an Exception occurred", e);
                 }
+                isOrientationListened = false;
             }
         }
-        isOrientationListened = false;
     }
 
     public Location getLastLocation() {
@@ -915,7 +926,7 @@ public class CameraController {
             }
 
             setCameraSettings(cameraSettings);
-            int currentRotation = orientationListener.getLastRotation();
+            int currentRotation = getLastCameraRotation();
             setCameraRotation(currentRotation != ROTATION_NOT_SPECIFIED ? currentRotation : getCurrentDisplayOrientation(context));
 
             cameraSurfaceHolderCallback = new CameraSurfaceHolderCallback();
@@ -1228,6 +1239,9 @@ public class CameraController {
             cameraId = CAMERA_ID_NONE;
             cameraInfo = null;
 
+            lastCameraRotation = ROTATION_NOT_SPECIFIED;
+            lastCameraDisplayRotation = ROTATION_NOT_SPECIFIED;
+
             // cameraSurfaceView = null;
 
             if (isCameraThreadRunning()) {
@@ -1267,8 +1281,26 @@ public class CameraController {
         }
     }
 
-    public void enableMuteSound(boolean enable) {
-        isMuteSoundEnabled = enable;
+    public void enableMuteSound(boolean toggle) {
+        isMuteSoundEnabled = toggle;
+    }
+
+    public void enableOrientationListener(boolean toggle) {
+        isOrientationListenerEnabled = toggle;
+        if (toggle) {
+            listenOrientationChanges();
+        } else {
+            unlistenOrientationChanges();
+        }
+    }
+
+    /** */
+    public int getLastCameraRotation() {
+        return isOrientationListened? orientationListener.getLastCorrectedRotation() : lastCameraRotation;
+    }
+
+    public int getLastCameraDisplayRotation() {
+        return lastCameraDisplayRotation;
     }
 
     public List<Camera.Size> getSupportedPreviewSizes() {
@@ -2950,7 +2982,7 @@ public class CameraController {
 
             mediaRecorder.setPreviewDisplay(cameraSurfaceView.getHolder().getSurface());
 
-            int currentRotation = orientationListener.getLastRotation();
+            int currentRotation = getLastCameraRotation();
             mediaRecorder.setOrientationHint(calculateCameraRotation(currentRotation != ROTATION_NOT_SPECIFIED ? currentRotation : getCurrentDisplayOrientation(context)));
 
             try {
@@ -3642,14 +3674,14 @@ public class CameraController {
     protected class OrientationListener extends OrientationIntervalListener {
 
         public OrientationListener(Context context) {
-            super(context, SensorManager.SENSOR_DELAY_NORMAL, TimeUnit.SECONDS.toMillis(1), OrientationListener.ROTATION_NOT_SPECIFIED);
+            super(context, SensorManager.SENSOR_DELAY_NORMAL, OrientationListener.NOTIFY_INTERVAL_NOT_SPECIFIED, OrientationListener.ROTATION_NOT_SPECIFIED);
         }
 
         @Override
         protected void doAction(int orientation) {
-            if (!isCameraBusy()) {
+//            if (!isCameraBusy()) {
                 setCameraRotation(orientation);
-            }
+//            }
         }
     }
 
