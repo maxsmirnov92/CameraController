@@ -54,14 +54,16 @@ public abstract class OrientationIntervalListener extends OrientationEventListen
         return lastRotation;
     }
 
-    /** user defined value */
+    /**
+     * user defined value
+     */
     public int getLastCorrectedRotation() {
         return lastCorrectedRotation;
     }
 
     /**
      * @param lastCorrectedRotation user defined value
-     * */
+     */
     public void setLastCorrectedRotation(int lastCorrectedRotation) {
         if (lastCorrectedRotation == ROTATION_NOT_SPECIFIED || lastCorrectedRotation >= 0 && lastCorrectedRotation < 360) {
             this.lastCorrectedRotation = lastCorrectedRotation;
@@ -71,32 +73,33 @@ public abstract class OrientationIntervalListener extends OrientationEventListen
     @Override
     public void onOrientationChanged(int orientation) { // display orientation
         if (orientation >= 0 && orientation < 360) {
-            long currentTime = System.currentTimeMillis();
-            int diff = 0;
+            if (orientation != lastRotation) {
+                long currentTime = System.currentTimeMillis();
+                int diff = 0;
 
-            boolean intervalPassed = notifyInterval == NOTIFY_INTERVAL_NOT_SPECIFIED || lastNotifyTime == 0 || currentTime - lastNotifyTime >= notifyInterval;
+                boolean intervalPassed = notifyInterval == NOTIFY_INTERVAL_NOT_SPECIFIED || lastNotifyTime == 0 || currentTime - lastNotifyTime >= notifyInterval;
 
-            if (intervalPassed) {
+                if (intervalPassed) {
 
-                if (lastRotation != ROTATION_NOT_SPECIFIED) {
-                    if (orientation >= 0 && orientation < 90 && lastRotation >= 270 && lastRotation < 360) {
-                        int currentRotationFixed = orientation + 360;
-                        diff = Math.abs(currentRotationFixed - lastRotation);
-                    } else if (orientation >= 270 && orientation < 360 && lastRotation >= 0 && lastRotation < 90) {
-                        int lastRotationFixed = lastRotation + 360;
-                        diff = Math.abs(orientation - lastRotationFixed);
-                    } else {
-                        diff = Math.abs(orientation - lastRotation);
+                    if (lastRotation != ROTATION_NOT_SPECIFIED) {
+                        if (orientation >= 0 && orientation < 90 && lastRotation >= 270 && lastRotation < 360) {
+                            int currentRotationFixed = orientation + 360;
+                            diff = Math.abs(currentRotationFixed - lastRotation);
+                        } else if (orientation >= 270 && orientation < 360 && lastRotation >= 0 && lastRotation < 90) {
+                            int lastRotationFixed = lastRotation + 360;
+                            diff = Math.abs(orientation - lastRotationFixed);
+                        } else {
+                            diff = Math.abs(orientation - lastRotation);
+                        }
+                    }
+
+                    if (lastRotation == ROTATION_NOT_SPECIFIED ||
+                            notifyDiffThreshold == NOTIFY_DIFF_THRESHOLD_NOT_SPECIFIED || diff >= notifyDiffThreshold) {
+                        doAction(orientation);
+                        lastNotifyTime = currentTime;
+                        lastRotation = orientation;
                     }
                 }
-
-                if (lastRotation == ROTATION_NOT_SPECIFIED ||
-                        notifyDiffThreshold == NOTIFY_DIFF_THRESHOLD_NOT_SPECIFIED || diff >= notifyDiffThreshold) {
-                    doAction(orientation);
-                    lastNotifyTime = currentTime;
-                    lastRotation = orientation;
-                }
-
             }
         }
     }

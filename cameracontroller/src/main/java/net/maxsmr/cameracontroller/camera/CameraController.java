@@ -107,6 +107,8 @@ public class CameraController {
 
     private static final int EXECUTOR_CALL_TIMEOUT = 10;
 
+    private static final long AUTO_FOCUS_TIMEOUT = TimeUnit.SECONDS.toMillis(3);
+
     private static Logger logger;
 
     private final Object sync = new Object();
@@ -157,6 +159,8 @@ public class CameraController {
 
     private boolean isOrientationListened = false;
 
+    private boolean isOrientationListenerEnabled = true;
+
     // flag is useless because callbacks may not be called (when camera is not opened, for e.g)
 //    private boolean isSurfaceCreated = false;
 
@@ -168,6 +172,8 @@ public class CameraController {
 
     private boolean isPreviewStated = false;
 
+    private Runnable autoFocusResetRunnable;
+
     @Nullable
     private Handler callbackHandler;
 
@@ -177,6 +183,7 @@ public class CameraController {
 
     private CameraInfo cameraInfo;
 
+    @NonNull
     private CameraState currentCameraState = CameraState.IDLE;
 
     private boolean isCameraLocked = true;
@@ -190,6 +197,8 @@ public class CameraController {
     private Location lastLocation;
 
     private VideoSettings currentVideoSettings;
+
+    private long lastTakePhotoStartTime;
 
     private File lastPhotoFile;
 
@@ -208,6 +217,10 @@ public class CameraController {
     private boolean enableStoreLocation = DEFAULT_ENABLE_STORE_LOCATION;
 
     private boolean enableGestureScaling = DEFAULT_ENABLE_GESTURE_SCALING;
+
+    private int lastCameraRotation = ROTATION_NOT_SPECIFIED;
+
+    private int lastCameraDisplayRotation= ROTATION_NOT_SPECIFIED;
 
     /**
      * used for storing and running runnables to save preview for given video
@@ -308,9 +321,9 @@ public class CameraController {
         return currentCameraState;
     }
 
-    private void setCurrentCameraState(CameraState state) {
+    private void setCurrentCameraState(@NonNull CameraState state) {
         synchronized (sync) {
-            if (state != null && state != currentCameraState) {
+            if (state != currentCameraState) {
                 currentCameraState = state;
                 logger.info("STATE : " + currentCameraState);
                 cameraStateListeners.notifyStateChanged(currentCameraState);
@@ -684,7 +697,7 @@ public class CameraController {
         surfaceView.setLayoutParams(layoutParams);
     }
 
-    private boolean setCameraDisplayOrientation(int displayDegrees) {
+    public boolean setCameraDisplayOrientation(int displayDegrees) {
         logger.debug("setCameraDisplayOrientation(), displayDegrees=" + displayDegrees);
 
         boolean result = false;
@@ -695,10 +708,11 @@ public class CameraController {
 
                 if (isCameraOpened() && isCameraLocked()) {
 
-                    final int resultDegrees = calculateCameraDisplayOrientation(displayDegrees);
+                    int resultDegrees = calculateCameraDisplayOrientation(displayDegrees);
 
                     try {
                         camera.setDisplayOrientation(resultDegrees);
+                        lastCameraDisplayRotation = resultDegrees;
                         result = true;
                     } catch (RuntimeException e) {
                         logger.error("a RuntimeException occurred during setDisplayOrientation()", e);
@@ -712,7 +726,7 @@ public class CameraController {
         return result;
     }
 
-    private boolean setCameraRotation(int displayDegrees) {
+    public boolean setCameraRotation(int displayDegrees) {
         logger.debug("setCameraRotation(), displayDegrees=" + displayDegrees);
 
         boolean result = false;
@@ -725,7 +739,7 @@ public class CameraController {
 
                     final int resultDegrees = calculateCameraRotation(displayDegrees);
 
-                    int previousRotation = orientationListener.getLastCorrectedRotation();
+                    int previousRotation = getLastCameraRotation();
 
                     if (previousRotation == ROTATION_NOT_SPECIFIED || previousRotation != resultDegrees) {
                         logger.debug("camera rotation displayDegrees: " + resultDegrees);
@@ -733,14 +747,14 @@ public class CameraController {
                             final Parameters params = camera.getParameters();
                             params.setRotation(resultDegrees);
                             camera.setParameters(params);
+                            lastCameraRotation = resultDegrees;
+                            if (isOrientationListened) {
+                                orientationListener.setLastCorrectedRotation(resultDegrees);
+                            }
                             result = true;
                         } catch (RuntimeException e) {
                             logger.error("a RuntimeException occurred during get/set camera parameters", e);
                         }
-                    }
-
-                    if (result) {
-                        orientationListener.setLastCorrectedRotation(displayDegrees);
                     }
                 }
             }
@@ -761,18 +775,20 @@ public class CameraController {
 
         int rotation = OrientationListener.getCorrectedDisplayRotation(displayDegrees);
 
-        synchronized (sync) {
+        if (rotation != OrientationListener.ROTATION_NOT_SPECIFIED) {
+            synchronized (sync) {
 
-            if (isCameraOpened()) {
+                if (isCameraOpened()) {
 
-                initCameraInfo();
+                    initCameraInfo();
 
-                if (cameraInfo != null) {
-                    if (cameraInfo.facing == Camera.CameraInfo.CAMERA_FACING_FRONT) {
-                        result = (cameraInfo.orientation + rotation) % 360;
-                        result = (360 - result) % 360;  // compensate the mirror
-                    } else {  // back-facing
-                        result = (cameraInfo.orientation - rotation + 360) % 360;
+                    if (cameraInfo != null) {
+                        if (cameraInfo.facing == Camera.CameraInfo.CAMERA_FACING_FRONT) {
+                            result = (cameraInfo.orientation + rotation) % 360;
+                            result = (360 - result) % 360;  // compensate the mirror
+                        } else {  // back-facing
+                            result = (cameraInfo.orientation - rotation + 360) % 360;
+                        }
                     }
                 }
             }
@@ -786,19 +802,21 @@ public class CameraController {
 
         int rotation = OrientationListener.getCorrectedDisplayRotation(displayDegrees);
 
-        rotation = (rotation + 45) / 90 * 90;
+        if (rotation != OrientationListener.ROTATION_NOT_SPECIFIED) {
+            rotation = (rotation + 45) / 90 * 90;
 
-        synchronized (sync) {
+            synchronized (sync) {
 
-            if (isCameraOpened()) {
+                if (isCameraOpened()) {
 
-                initCameraInfo();
+                    initCameraInfo();
 
-                if (cameraInfo != null) {
-                    if (cameraInfo.facing == CameraInfo.CAMERA_FACING_FRONT) {
-                        result = (cameraInfo.orientation - rotation + 360) % 360;
-                    } else {  // back-facing camera
-                        result = (cameraInfo.orientation + rotation) % 360;
+                    if (cameraInfo != null) {
+                        if (cameraInfo.facing == CameraInfo.CAMERA_FACING_FRONT) {
+                            result = (cameraInfo.orientation - rotation + 360) % 360;
+                        } else {  // back-facing camera
+                            result = (cameraInfo.orientation + rotation) % 360;
+                        }
                     }
                 }
             }
@@ -809,7 +827,7 @@ public class CameraController {
 
     private void listenOrientationChanges() {
         if (orientationListener != null) {
-            if (!isOrientationListened) {
+            if (!isOrientationListened && isCameraOpened()) {
                 try {
                     orientationListener.enable();
                     isOrientationListened = true;
@@ -828,9 +846,9 @@ public class CameraController {
                 } catch (Exception e) {
                     logger.error("an Exception occurred", e);
                 }
+                isOrientationListened = false;
             }
         }
-        isOrientationListened = false;
     }
 
     public Location getLastLocation() {
@@ -854,6 +872,8 @@ public class CameraController {
                 logger.error("incorrect camera id: " + cameraId);
                 return false;
             }
+
+            long startOpenTime = System.currentTimeMillis();
 
             logger.debug("opening camera " + cameraId + "...");
             try {
@@ -906,7 +926,7 @@ public class CameraController {
             }
 
             setCameraSettings(cameraSettings);
-            int currentRotation = orientationListener.getLastRotation();
+            int currentRotation = getLastCameraRotation();
             setCameraRotation(currentRotation != ROTATION_NOT_SPECIFIED ? currentRotation : getCurrentDisplayOrientation(context));
 
             cameraSurfaceHolderCallback = new CameraSurfaceHolderCallback();
@@ -926,6 +946,8 @@ public class CameraController {
 
                 setupPreview();
             }
+
+            logger.debug("camera open time: " + (System.currentTimeMillis() - startOpenTime) + " ms");
 
             return true;
         }
@@ -964,7 +986,7 @@ public class CameraController {
 
     @Nullable
     public Camera getOpenedCameraInstance() {
-        return isCameraOpened() && isCameraLocked() && !isMediaRecorderRecording ? camera : null;
+        return isCameraOpened()? camera : null;
     }
 
     public int getOpenedCameraId() {
@@ -1187,6 +1209,8 @@ public class CameraController {
                 }
             }
 
+            setFlashMode(FlashMode.OFF);
+
             unlistenOrientationChanges();
 
             setCurrentCameraState(CameraState.IDLE);
@@ -1215,6 +1239,9 @@ public class CameraController {
             cameraId = CAMERA_ID_NONE;
             cameraInfo = null;
 
+            lastCameraRotation = ROTATION_NOT_SPECIFIED;
+            lastCameraDisplayRotation = ROTATION_NOT_SPECIFIED;
+
             // cameraSurfaceView = null;
 
             if (isCameraThreadRunning()) {
@@ -1229,15 +1256,6 @@ public class CameraController {
 
     private void muteSound(boolean mute) {
         if (isMuteSoundEnabled) {
-            AudioManager mgr = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
-            // mgr.setStreamMute(AudioManager.STREAM_SYSTEM, mute);
-            if (mute) {
-                previousStreamVolume = mgr.getStreamVolume(AudioManager.STREAM_SYSTEM);
-                mgr.setStreamVolume(AudioManager.STREAM_SYSTEM, 0, AudioManager.FLAG_REMOVE_SOUND_AND_VIBRATE);
-            } else if (previousStreamVolume >= 0) {
-                mgr.setStreamVolume(AudioManager.STREAM_SYSTEM, previousStreamVolume, 0);
-            }
-
             if (android.os.Build.VERSION.SDK_INT >= 17) {
                 try {
                     if (isCameraLocked()) {
@@ -1248,12 +1266,41 @@ public class CameraController {
                 } catch (RuntimeException e) {
                     logger.error("a RuntimeException occurred during enableShutterSound()", e);
                 }
+            } else {
+                AudioManager mgr = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
+                if (mgr != null) {
+                    // mgr.setStreamMute(AudioManager.STREAM_SYSTEM, mute);
+                    if (mute) {
+                        previousStreamVolume = mgr.getStreamVolume(AudioManager.STREAM_SYSTEM);
+                        mgr.setStreamVolume(AudioManager.STREAM_SYSTEM, 0, AudioManager.FLAG_REMOVE_SOUND_AND_VIBRATE);
+                    } else if (previousStreamVolume >= 0) {
+                        mgr.setStreamVolume(AudioManager.STREAM_SYSTEM, previousStreamVolume, 0);
+                    }
+                }
             }
         }
     }
 
-    public void enableMuteSound(boolean enable) {
-        isMuteSoundEnabled = enable;
+    public void enableMuteSound(boolean toggle) {
+        isMuteSoundEnabled = toggle;
+    }
+
+    public void enableOrientationListener(boolean toggle) {
+        isOrientationListenerEnabled = toggle;
+        if (toggle) {
+            listenOrientationChanges();
+        } else {
+            unlistenOrientationChanges();
+        }
+    }
+
+    /** */
+    public int getLastCameraRotation() {
+        return isOrientationListened? orientationListener.getLastCorrectedRotation() : lastCameraRotation;
+    }
+
+    public int getLastCameraDisplayRotation() {
+        return lastCameraDisplayRotation;
     }
 
     public List<Camera.Size> getSupportedPreviewSizes() {
@@ -2262,6 +2309,11 @@ public class CameraController {
 
         checkReleased();
 
+        if (!TextUtils.isEmpty(photoFileName) && photoFileName.contains(File.separator)) {
+            logger.error("photo file name " + photoFileName + " contains path separators!");
+            return false;
+        }
+
         synchronized (sync) {
 
             if (currentCameraState != CameraState.IDLE) {
@@ -2278,6 +2330,8 @@ public class CameraController {
                 logger.error("surface is not created");
                 return false;
             }
+
+            lastTakePhotoStartTime = System.currentTimeMillis();
 
             CameraSettings currentCameraSettings = getCurrentCameraSettings();
 
@@ -2315,17 +2369,36 @@ public class CameraController {
                 this.lastPhotoFile = null;
             }
 
-            if (focusMode != null && (focusMode == FocusMode.AUTO || focusMode == FocusMode.MACRO)) {
+            setCurrentCameraState(CameraState.TAKING_PHOTO);
+
+            if (focusMode == FocusMode.AUTO) {
+
+                cancelResetAutoFocusCallback();
 
                 camera.cancelAutoFocus();
 
-                logger.info("taking photo with auto focus...");
+                cameraThread.addTask(autoFocusResetRunnable = new Runnable() {
 
+                    @Override
+                    public void run() {
+                        logger.error("auto focus callback not triggered");
+                        synchronized (sync) {
+                            autoFocusResetRunnable = null;
+                            if (isCameraLocked()) {
+                                camera.cancelAutoFocus();
+                                takePhotoInternal(writeToFile);
+                            }
+                        }
+                    }
+                }, AUTO_FOCUS_TIMEOUT);
+
+                logger.info("taking photo with auto focus...");
                 camera.autoFocus(new AutoFocusCallback() {
 
                     @Override
                     public void onAutoFocus(boolean success, Camera camera) {
                         logger.debug("onAutoFocus(), success=" + true);
+                        cancelResetAutoFocusCallback();
                         takePhotoInternal(writeToFile);
                     }
                 });
@@ -2339,24 +2412,63 @@ public class CameraController {
         }
     }
 
-    private void takePhotoInternal(boolean writeToFile) {
+    private void takePhotoInternal(final boolean writeToFile) {
         muteSound(true);
-        setCurrentCameraState(CameraState.TAKING_PHOTO);
         isPreviewStated = false;
-        camera.takePicture(isMuteSoundEnabled ? null : shutterCallbackStub, null, new CustomPictureCallback(writeToFile));
+        try {
+            executor.submit(new Callable<Boolean>() {
+                @Override
+                public Boolean call() throws Exception {
+                    camera.takePicture(isMuteSoundEnabled ? null : shutterCallbackStub,
+                            new PictureRawCallback(), new PictureReadyCallback(writeToFile));
+                    return true;
+                }
+            }).get(EXECUTOR_CALL_TIMEOUT, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            logger.error("an Exception occurred during get()", e);
+            reopenCamera(cameraId, cameraSurfaceView, getCurrentCameraSettings(), callbackHandler);
+        }
     }
 
-    private class CustomPictureCallback implements Camera.PictureCallback {
+    private void cancelResetAutoFocusCallback() {
+        if (autoFocusResetRunnable != null) {
+            cameraThread.removeTask(autoFocusResetRunnable);
+            autoFocusResetRunnable = null;
+        }
+    }
+
+    private class PictureRawCallback implements Camera.PictureCallback {
+
+        @Override
+        public void onPictureTaken(byte[] data, Camera camera) {
+            logger.debug(PictureRawCallback.class.getSimpleName() + " :: onPictureTaken()");
+
+            if (isReleased()) {
+                return;
+            }
+
+            synchronized (sync) {
+
+                if (currentCameraState != CameraState.TAKING_PHOTO) {
+                    throw new IllegalStateException("current camera state is not " + CameraState.TAKING_PHOTO);
+                }
+
+                photoReadyListeners.notifyRawDataReady(data);
+            }
+        }
+    }
+
+    private class PictureReadyCallback implements Camera.PictureCallback {
 
         private final boolean writeToFile;
 
-        CustomPictureCallback(boolean writeToFile) {
+        PictureReadyCallback(boolean writeToFile) {
             this.writeToFile = writeToFile;
         }
 
         @Override
         public void onPictureTaken(final byte[] data, Camera camera) {
-            logger.debug("onPictureTaken()");
+            logger.debug(PictureReadyCallback.class.getSimpleName() + " :: onPictureTaken()");
 
             if (isReleased()) {
                 return;
@@ -2388,10 +2500,13 @@ public class CameraController {
 
                 muteSound(false);
 
+                long elapsedTime = lastTakePhotoStartTime >= 0? System.currentTimeMillis() - lastTakePhotoStartTime : 0;
+                elapsedTime = elapsedTime < 0? 0 : elapsedTime;
+
                 if (writeToFile) {
-                    photoReadyListeners.notifyPhotoFileReady(lastPhotoFile);
+                    photoReadyListeners.notifyPhotoFileReady(lastPhotoFile, elapsedTime);
                 } else {
-                    photoReadyListeners.notifyPhotoDataReady(data);
+                    photoReadyListeners.notifyPhotoDataReady(data, elapsedTime);
                 }
             }
 
@@ -2867,7 +2982,7 @@ public class CameraController {
 
             mediaRecorder.setPreviewDisplay(cameraSurfaceView.getHolder().getSurface());
 
-            int currentRotation = orientationListener.getLastRotation();
+            int currentRotation = getLastCameraRotation();
             mediaRecorder.setOrientationHint(calculateCameraRotation(currentRotation != ROTATION_NOT_SPECIFIED ? currentRotation : getCurrentDisplayOrientation(context)));
 
             try {
@@ -3461,19 +3576,23 @@ public class CameraController {
 
             synchronized (sync) {
 
+                final long frameTime;
+
                 if (data.length != expectedCallbackBufSize && expectedCallbackBufSize > 0) {
                     logger.warn("frame data size (" + data.length + ") is not equal expected (" + expectedCallbackBufSize + ")");
                 }
 
                 if (allowLogging) {
-                    onFrame();
+                    frameTime = onFrame();
+                } else {
+                    frameTime = System.nanoTime();
                 }
 
                 if (isCameraLocked() && callbackBufferQueueSize > 0) {
                     camera.addCallbackBuffer(data);
                 }
 
-                previewFrameListeners.notifyPreviewFrame(data);
+                previewFrameListeners.notifyPreviewFrame(data, frameTime);
             }
         }
     }
@@ -3555,14 +3674,14 @@ public class CameraController {
     protected class OrientationListener extends OrientationIntervalListener {
 
         public OrientationListener(Context context) {
-            super(context, SensorManager.SENSOR_DELAY_NORMAL, TimeUnit.SECONDS.toMillis(1), OrientationListener.ROTATION_NOT_SPECIFIED);
+            super(context, SensorManager.SENSOR_DELAY_NORMAL, OrientationListener.NOTIFY_INTERVAL_NOT_SPECIFIED, OrientationListener.ROTATION_NOT_SPECIFIED);
         }
 
         @Override
         protected void doAction(int orientation) {
-            if (!isCameraBusy()) {
+//            if (!isCameraBusy()) {
                 setCameraRotation(orientation);
-            }
+//            }
         }
     }
 
@@ -3664,13 +3783,13 @@ public class CameraController {
 
     protected class PhotoReadyObservable extends Observable<IPhotoReadyListener> {
 
-        void notifyPhotoFileReady(final File photoFile) {
+        void notifyRawDataReady(final byte[] rawData) {
             Runnable run = new Runnable() {
                 @Override
                 public void run() {
                     synchronized (mObservers) {
                         for (IPhotoReadyListener l : mObservers) {
-                            l.onPhotoFileReady(photoFile);
+                            l.onRawDataReady(rawData);
                         }
                     }
                 }
@@ -3678,13 +3797,27 @@ public class CameraController {
             run(run);
         }
 
-        void notifyPhotoDataReady(final byte[] photoData) {
+        void notifyPhotoFileReady(final File photoFile, final long elapsedTime) {
             Runnable run = new Runnable() {
                 @Override
                 public void run() {
                     synchronized (mObservers) {
                         for (IPhotoReadyListener l : mObservers) {
-                            l.onPhotoDataReady(photoData);
+                            l.onPhotoFileReady(photoFile, elapsedTime);
+                        }
+                    }
+                }
+            };
+            run(run);
+        }
+
+        void notifyPhotoDataReady(final byte[] photoData, final long elapsedTime) {
+            Runnable run = new Runnable() {
+                @Override
+                public void run() {
+                    synchronized (mObservers) {
+                        for (IPhotoReadyListener l : mObservers) {
+                            l.onPhotoDataReady(photoData, elapsedTime);
                         }
                     }
                 }
@@ -3772,14 +3905,14 @@ public class CameraController {
             run(run);
         }
 
-        void notifyPreviewFrame(final byte[] data) {
+        void notifyPreviewFrame(final byte[] data, final long time) {
             Runnable run = new Runnable() {
                 @Override
                 public void run() {
                     if (data != null && data.length > 0) {
                         synchronized (mObservers) {
                             for (IPreviewFrameListener l : mObservers) {
-                                l.onPreviewFrame(data);
+                                l.onPreviewFrame(data, time);
                             }
                         }
                     }
@@ -3806,9 +3939,11 @@ public class CameraController {
 
     public interface IPhotoReadyListener {
 
-        void onPhotoFileReady(File photoFile);
+        void onRawDataReady(byte[] rawData);
 
-        void onPhotoDataReady(byte[] photoData);
+        void onPhotoFileReady(File photoFile, long time);
+
+        void onPhotoDataReady(byte[] photoData, long time);
     }
 
     public interface IRecordLimitReachedListener {
@@ -3836,6 +3971,9 @@ public class CameraController {
 
         void onPreviewFinished();
 
-        void onPreviewFrame(@NonNull byte[] data);
+        /**
+         * @param time frame time in ns
+         */
+        void onPreviewFrame(@NonNull byte[] data, long time);
     }
 }

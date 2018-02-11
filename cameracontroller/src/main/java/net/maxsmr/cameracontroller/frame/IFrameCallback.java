@@ -6,5 +6,6 @@ public interface IFrameCallback {
 
     void notifyStreamFinished();
 
-    void onFrame();
+    /** @return frame time in ns if handled, 0 - otherwise */
+    long onFrame();
 }
