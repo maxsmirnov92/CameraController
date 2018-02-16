@@ -47,7 +47,8 @@ import net.maxsmr.cameracontroller.camera.settings.video.record.VideoRecordLimit
 import net.maxsmr.cameracontroller.camera.settings.video.record.VideoSettings;
 import net.maxsmr.cameracontroller.frame.FrameCalculator;
 import net.maxsmr.cameracontroller.frame.stats.IFrameStatsListener;
-import net.maxsmr.cameracontroller.logger.base.Logger;
+import net.maxsmr.commonutils.android.gui.GuiUtils;
+import net.maxsmr.commonutils.android.gui.OrientationIntervalListener;
 import net.maxsmr.commonutils.android.gui.progressable.Progressable;
 import net.maxsmr.commonutils.android.hardware.SimpleGestureListener;
 import net.maxsmr.commonutils.android.media.MetadataRetriever;
@@ -55,6 +56,7 @@ import net.maxsmr.commonutils.data.CompareUtils;
 import net.maxsmr.commonutils.data.FileHelper;
 import net.maxsmr.commonutils.data.Observable;
 import net.maxsmr.commonutils.graphic.GraphicUtils;
+import net.maxsmr.commonutils.logger.base.Logger;
 import net.maxsmr.tasksutils.CustomHandlerThread;
 import net.maxsmr.tasksutils.handler.HandlerRunnable;
 import net.maxsmr.tasksutils.storage.ids.IdHolder;
@@ -75,10 +77,11 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
-import static net.maxsmr.cameracontroller.camera.OrientationIntervalListener.ROTATION_NOT_SPECIFIED;
-import static net.maxsmr.cameracontroller.camera.OrientationIntervalListener.getCurrentDisplayOrientation;
 import static net.maxsmr.cameracontroller.camera.settings.photo.CameraSettings.DEFAULT_IMAGE_FORMAT;
 import static net.maxsmr.cameracontroller.camera.settings.photo.CameraSettings.DEFAULT_PREVIEW_FORMAT;
+import static net.maxsmr.commonutils.android.gui.GuiUtils.getCorrectedDisplayRotation;
+import static net.maxsmr.commonutils.android.gui.GuiUtils.getCurrentDisplayOrientation;
+import static net.maxsmr.commonutils.android.gui.OrientationIntervalListener.ROTATION_NOT_SPECIFIED;
 
 
 @SuppressWarnings({"deprecation"})
@@ -773,9 +776,9 @@ public class CameraController {
 
         int result = 0;
 
-        int rotation = OrientationListener.getCorrectedDisplayRotation(displayDegrees);
+        int rotation = getCorrectedDisplayRotation(displayDegrees);
 
-        if (rotation != OrientationListener.ROTATION_NOT_SPECIFIED) {
+        if (rotation != ROTATION_NOT_SPECIFIED) {
             synchronized (sync) {
 
                 if (isCameraOpened()) {
@@ -800,9 +803,9 @@ public class CameraController {
     public int calculateCameraRotation(int displayDegrees) {
         int result = 0;
 
-        int rotation = OrientationListener.getCorrectedDisplayRotation(displayDegrees);
+        int rotation = getCorrectedDisplayRotation(displayDegrees);
 
-        if (rotation != OrientationListener.ROTATION_NOT_SPECIFIED) {
+        if (rotation != ROTATION_NOT_SPECIFIED) {
             rotation = (rotation + 45) / 90 * 90;
 
             synchronized (sync) {
@@ -3674,7 +3677,7 @@ public class CameraController {
     protected class OrientationListener extends OrientationIntervalListener {
 
         public OrientationListener(Context context) {
-            super(context, SensorManager.SENSOR_DELAY_NORMAL, OrientationListener.NOTIFY_INTERVAL_NOT_SPECIFIED, OrientationListener.ROTATION_NOT_SPECIFIED);
+            super(context, SensorManager.SENSOR_DELAY_NORMAL, OrientationListener.NOTIFY_INTERVAL_NOT_SPECIFIED, ROTATION_NOT_SPECIFIED);
         }
 
         @Override
