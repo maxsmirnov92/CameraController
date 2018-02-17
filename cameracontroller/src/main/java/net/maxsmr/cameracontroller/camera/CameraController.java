@@ -2028,10 +2028,7 @@ public class CameraController {
                 result = setFlashMode(FlashMode.ON);
             }
         } else {
-            result = setFlashMode(FlashMode.AUTO);
-            if (!result) {
-                result = setFlashMode(FlashMode.OFF);
-            }
+            result = setFlashMode(FlashMode.OFF);
         }
         return result;
     }
@@ -2986,7 +2983,7 @@ public class CameraController {
             mediaRecorder.setPreviewDisplay(cameraSurfaceView.getHolder().getSurface());
 
             int currentRotation = getLastCameraRotation();
-            mediaRecorder.setOrientationHint(calculateCameraRotation(currentRotation != ROTATION_NOT_SPECIFIED ? currentRotation : getCurrentDisplayOrientation(context)));
+            mediaRecorder.setOrientationHint(currentRotation != ROTATION_NOT_SPECIFIED ? currentRotation : calculateCameraRotation(getCurrentDisplayOrientation(context)));
 
             try {
                 mediaRecorder.prepare();
