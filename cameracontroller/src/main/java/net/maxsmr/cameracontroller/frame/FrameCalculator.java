@@ -7,9 +7,9 @@ import android.support.annotation.Nullable;
 
 import net.maxsmr.cameracontroller.frame.stats.FrameStats;
 import net.maxsmr.cameracontroller.frame.stats.IFrameStatsListener;
-import net.maxsmr.cameracontroller.logger.base.Logger;
 import net.maxsmr.commonutils.data.MathUtils;
 import net.maxsmr.commonutils.data.Observable;
+import net.maxsmr.commonutils.logger.base.Logger;
 
 import java.util.ArrayList;
 import java.util.List;
