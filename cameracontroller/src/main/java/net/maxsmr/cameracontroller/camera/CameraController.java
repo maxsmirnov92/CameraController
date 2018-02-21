@@ -3173,7 +3173,10 @@ public class CameraController {
         releaseMakePreviewThreadPoolExecutor();
 
         makePreviewThreadPoolExecutor = new TaskRunnableExecutor<>(DEFAULT_MAKE_PREVIEW_POOL_SIZE, 1, TaskRunnableExecutor.DEFAULT_KEEP_ALIVE_TIME, TimeUnit.SECONDS, "MakePreviewThread",
-                validator, storage, restorer, callbackHandler);
+                validator, storage, callbackHandler);
+        if (restorer != null) {
+            makePreviewThreadPoolExecutor.restoreQueueByRestorer(restorer);
+        }
     }
 
     public void releaseMakePreviewThreadPoolExecutor() {
