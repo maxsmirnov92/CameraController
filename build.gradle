@@ -28,7 +28,7 @@ ext {
     buildToolsVersion_ = "27.0.2"
     appCompatVersion = buildToolsVersion_
 
-    taskUtilsVersion = "1.0.4.5"
+    taskUtilsVersion = "1.0.4.6"
 }
 
 task clean(type: Delete) {
