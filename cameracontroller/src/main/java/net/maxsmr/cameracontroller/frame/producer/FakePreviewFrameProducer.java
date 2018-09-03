@@ -9,7 +9,8 @@ import net.maxsmr.tasksutils.ScheduledThreadPoolExecutorManager;
 
 public class FakePreviewFrameProducer {
 
-    private final ScheduledThreadPoolExecutorManager mExecutorManager = new ScheduledThreadPoolExecutorManager(ScheduledThreadPoolExecutorManager.ScheduleMode.FIXED_RATE, "Fake Frame Thread");
+    private final ScheduledThreadPoolExecutorManager mExecutorManager
+            = new ScheduledThreadPoolExecutorManager(ScheduledThreadPoolExecutorManager.ScheduleMode.FIXED_RATE, "Fake Frame Thread");
 
     private IFrameCallback mPreviewCallback;
 
@@ -23,7 +24,7 @@ public class FakePreviewFrameProducer {
         if (callback != null) {
             stopPreview();
             mPreviewCallback = callback;
-            mPreviewHandler = new Handler(Looper.myLooper());
+            mPreviewHandler = new Handler(Looper.myLooper() != null? Looper.myLooper() : Looper.getMainLooper());
             mPreviewCallback.notifySteamStarted();
             mExecutorManager.addRunnableTask(new PreviewRunnable(delay));
             mExecutorManager.start(interval);

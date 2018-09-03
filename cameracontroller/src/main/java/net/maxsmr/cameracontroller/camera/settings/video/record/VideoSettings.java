@@ -5,8 +5,6 @@ import android.media.CamcorderProfile;
 
 import com.google.gson.annotations.Expose;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.io.Serializable;
 
@@ -16,13 +14,14 @@ import net.maxsmr.cameracontroller.camera.settings.FocusMode;
 import net.maxsmr.cameracontroller.camera.settings.video.AudioEncoder;
 import net.maxsmr.cameracontroller.camera.settings.video.VideoEncoder;
 import net.maxsmr.cameracontroller.camera.settings.video.VideoQuality;
+import net.maxsmr.commonutils.logger.BaseLogger;
+import net.maxsmr.commonutils.logger.holder.BaseLoggerHolder;
 
 public class VideoSettings implements Serializable {
 
     private static final long serialVersionUID = 4832290244769646652L;
 
-    private static final Logger logger = LoggerFactory.getLogger(VideoSettings.class);
-
+    private static final BaseLogger logger = BaseLoggerHolder.getInstance().getLogger(VideoSettings.class);
 
     public static final int VIDEO_FRAME_RATE_MAX = 60;
     /**
@@ -104,7 +103,7 @@ public class VideoSettings implements Serializable {
             return true;
         } else {
             if (quality != null) {
-                logger.error("profile " + quality.getValue() + " is not supported for camera with id " + cameraId);
+                logger.e("profile " + quality.getValue() + " is not supported for camera with id " + cameraId);
             }
             return false;
         }
@@ -164,8 +163,8 @@ public class VideoSettings implements Serializable {
     }
 
     /**
-     * @param frameRate {@linkplain VIDEO_FRAME_RATE_AUTO} - auto, measured frame rate will be applied (if it was already calculated), (0..{@link VIDEO_FRAME_RATE_MAX}] - custom
-     *                  frame rate
+     * @param frameRate {@linkplain VideoSettings#VIDEO_FRAME_RATE_AUTO} - auto, measured frame rate will be applied (if it was already calculated),
+     *                  (0..{@link VideoSettings#VIDEO_FRAME_RATE_MAX}] - custom frame rate
      */
     public boolean setVideoFrameRate(int frameRate) {
         if (frameRate > 0 && frameRate <= VIDEO_FRAME_RATE_MAX || frameRate == VIDEO_FRAME_RATE_AUTO) {

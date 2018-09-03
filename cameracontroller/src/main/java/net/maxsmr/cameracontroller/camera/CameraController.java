@@ -47,7 +47,6 @@ import net.maxsmr.cameracontroller.camera.settings.video.record.VideoRecordLimit
 import net.maxsmr.cameracontroller.camera.settings.video.record.VideoSettings;
 import net.maxsmr.cameracontroller.frame.FrameCalculator;
 import net.maxsmr.cameracontroller.frame.stats.IFrameStatsListener;
-import net.maxsmr.commonutils.android.gui.GuiUtils;
 import net.maxsmr.commonutils.android.gui.OrientationIntervalListener;
 import net.maxsmr.commonutils.android.gui.progressable.Progressable;
 import net.maxsmr.commonutils.android.hardware.SimpleGestureListener;
@@ -56,7 +55,8 @@ import net.maxsmr.commonutils.data.CompareUtils;
 import net.maxsmr.commonutils.data.FileHelper;
 import net.maxsmr.commonutils.data.Observable;
 import net.maxsmr.commonutils.graphic.GraphicUtils;
-import net.maxsmr.commonutils.logger.base.Logger;
+import net.maxsmr.commonutils.logger.BaseLogger;
+import net.maxsmr.commonutils.logger.holder.BaseLoggerHolder;
 import net.maxsmr.tasksutils.CustomHandlerThread;
 import net.maxsmr.tasksutils.handler.HandlerRunnable;
 import net.maxsmr.tasksutils.storage.ids.IdHolder;
@@ -87,6 +87,8 @@ import static net.maxsmr.commonutils.android.gui.OrientationIntervalListener.ROT
 @SuppressWarnings({"deprecation"})
 public class CameraController {
 
+    private static final BaseLogger logger = BaseLoggerHolder.getInstance().getLogger(CameraController.class);
+
     private static final SimpleDateFormat fileNameDateFormat = new SimpleDateFormat("dd-MM-yyyy_HH-mm-ss", Locale.getDefault());
 
     public static final int DEFAULT_PREVIEW_CALLBACK_BUFFER_QUEUE_SIZE = 3;
@@ -111,8 +113,6 @@ public class CameraController {
     private static final int EXECUTOR_CALL_TIMEOUT = 10;
 
     private static final long AUTO_FOCUS_TIMEOUT = TimeUnit.SECONDS.toMillis(3);
-
-    private static Logger logger;
 
     private final Object sync = new Object();
 
@@ -140,7 +140,7 @@ public class CameraController {
 
         @Override
         public void onShutter() {
-            logger.debug("onShutter()");
+            logger.d("onShutter()");
         }
     };
 
@@ -158,7 +158,7 @@ public class CameraController {
 
     private SimpleGestureListener surfaceGestureListener;
 
-    private OrientationListener orientationListener;
+    private final OrientationListener orientationListener;
 
     private boolean isOrientationListened = false;
 
@@ -223,12 +223,12 @@ public class CameraController {
 
     private int lastCameraRotation = ROTATION_NOT_SPECIFIED;
 
-    private int lastCameraDisplayRotation= ROTATION_NOT_SPECIFIED;
+    private int lastCameraDisplayRotation = ROTATION_NOT_SPECIFIED;
 
     /**
      * used for storing and running runnables to save preview for given video
      */
-    private TaskRunnableExecutor<MakePreviewRunnableInfo, MakePreviewRunnable> makePreviewThreadPoolExecutor;
+    private TaskRunnableExecutor<MakePreviewRunnableInfo, Void, Void, MakePreviewRunnable> makePreviewThreadPoolExecutor;
 
     public CameraController(@NonNull Context context, boolean enableFpsLogging) {
         this.context = context;
@@ -271,7 +271,6 @@ public class CameraController {
         videoPreviewListeners.unregisterAll();
 
         context = null;
-        orientationListener = null;
 
         isReleased = true;
     }
@@ -328,7 +327,7 @@ public class CameraController {
         synchronized (sync) {
             if (state != currentCameraState) {
                 currentCameraState = state;
-                logger.info("STATE : " + currentCameraState);
+                logger.i("STATE : " + currentCameraState);
                 cameraStateListeners.notifyStateChanged(currentCameraState);
                 Runnable run = new Runnable() {
                     @Override
@@ -375,7 +374,7 @@ public class CameraController {
     public CameraSettings getCurrentCameraSettings() {
 
         if (!isCameraLocked()) {
-            logger.error("can't get parameters: camera is not locked");
+            logger.e("can't get parameters: camera is not locked");
             return null;
         }
 
@@ -384,7 +383,7 @@ public class CameraController {
         try {
             params = camera.getParameters();
         } catch (RuntimeException e) {
-            logger.error("a RuntimeException occurred during getParameters()");
+            logger.e("a RuntimeException occurred during getParameters()");
             return null;
         }
 
@@ -399,14 +398,14 @@ public class CameraController {
     public CameraSettings getLowCameraSettings() {
 
         if (!isCameraLocked()) {
-            logger.error("can't get parameters: camera is not locked");
+            logger.e("can't get parameters: camera is not locked");
             return null;
         }
 
         final List<Size> supportedPictureSizes = getSupportedPictureSizes();
 
         if (supportedPictureSizes == null || supportedPictureSizes.isEmpty()) {
-            logger.error("supportedPictureSizes is null or empty");
+            logger.e("supportedPictureSizes is null or empty");
             return null;
         }
 
@@ -419,14 +418,14 @@ public class CameraController {
     public CameraSettings getMediumCameraSettings() {
 
         if (!isCameraLocked()) {
-            logger.error("can't get parameters: camera is not locked");
+            logger.e("can't get parameters: camera is not locked");
             return null;
         }
 
         final List<Camera.Size> supportedPictureSizes = getSupportedPictureSizes();
 
         if (supportedPictureSizes == null || supportedPictureSizes.isEmpty()) {
-            logger.error("supportedPictureSizes is null or empty");
+            logger.e("supportedPictureSizes is null or empty");
             return null;
         }
 
@@ -438,14 +437,14 @@ public class CameraController {
     public CameraSettings getHighCameraSettings() {
 
         if (!isCameraLocked()) {
-            logger.error("can't get parameters: camera is not locked");
+            logger.e("can't get parameters: camera is not locked");
             return null;
         }
 
         final List<Camera.Size> supportedPictureSizes = getSupportedPictureSizes();
 
         if (supportedPictureSizes == null || supportedPictureSizes.isEmpty()) {
-            logger.error("supportedPictureSizes is null or empty");
+            logger.e("supportedPictureSizes is null or empty");
             return null;
         }
 
@@ -490,10 +489,10 @@ public class CameraController {
     }
 
     public boolean setPreviewCallbackWithBuffer(int queueSize) {
-        logger.debug("setPreviewCallbackWithBuffer(), queueSize=" + queueSize);
+        logger.d("setPreviewCallbackWithBuffer(), queueSize=" + queueSize);
 
         if (queueSize < 0) {
-            logger.error("incorrect queueSize: " + queueSize);
+            logger.e("incorrect queueSize: " + queueSize);
             return false;
         }
 
@@ -513,14 +512,14 @@ public class CameraController {
         ImageFormat previewFormat = getCameraPreviewFormat();
 
         if (previewFormat == null) {
-            logger.error("can't get previewFormat");
+            logger.e("can't get previewFormat");
             return null;
         }
 
         Camera.Size previewSize = getCameraPreviewSize();
 
         if (previewSize == null) {
-            logger.error("can't get previewSize");
+            logger.e("can't get previewSize");
             return null;
         }
 
@@ -537,13 +536,10 @@ public class CameraController {
             expectedCallbackBufSize = ySize + uvSize * 2;
         }
 
-        // logger.debug("preview callback byte buffer size: " + expectedCallbackBufSize);
+        // logger.d("preview callback byte buffer size: " + expectedCallbackBufSize);
         return new byte[expectedCallbackBufSize];
     }
 
-    /**
-     * maybe better invoke this after startPreview() ?
-     */
     private void setPreviewCallback() {
         synchronized (sync) {
             if (isCameraLocked()) {
@@ -551,11 +547,11 @@ public class CameraController {
                 if (callbackBufferQueueSize > 0) {
                     for (int i = 0; i < callbackBufferQueueSize; i++)
                         camera.addCallbackBuffer(allocatePreviewCallbackBuffer());
-                    logger.debug("setting preview callback with buffer...");
+                    logger.d("setting preview callback with buffer...");
                     camera.setPreviewCallbackWithBuffer(previewCallback);
                 } else {
                     expectedCallbackBufSize = 0;
-                    logger.debug("setting preview callback...");
+                    logger.d("setting preview callback...");
                     camera.setPreviewCallback(previewCallback);
                 }
             }
@@ -567,7 +563,7 @@ public class CameraController {
 
         @Override
         public void surfaceCreated(SurfaceHolder holder) {
-            logger.debug("SurfaceHolderCallback :: surfaceCreated()");
+            logger.d("SurfaceHolderCallback :: surfaceCreated()");
 
             if (isCameraOpened() && holder != null && holder.getSurface() != null) { // isSurfaceCreated() check fails here
 
@@ -575,7 +571,7 @@ public class CameraController {
                     try {
                         camera.setPreviewDisplay(holder);
                     } catch (IOException e) {
-                        logger.error("an IOException occurred during setPreviewDisplay()", e);
+                        logger.e("an IOException occurred during setPreviewDisplay()", e);
                     }
                 }
 
@@ -589,7 +585,7 @@ public class CameraController {
 
         @Override
         public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
-            logger.debug("SurfaceHolderCallback :: surfaceChanged(), format=" + format + ", width=" + width + ", height=" + height);
+            logger.d("SurfaceHolderCallback :: surfaceChanged(), format=" + format + ", width=" + width + ", height=" + height);
 
             surfaceWidth = width;
             surfaceHeight = height;
@@ -601,7 +597,7 @@ public class CameraController {
 
         @Override
         public void surfaceDestroyed(SurfaceHolder holder) {
-            logger.debug("SurfaceHolderCallback :: surfaceDestroyed()");
+            logger.d("SurfaceHolderCallback :: surfaceDestroyed()");
 
             surfaceWidth = 0;
             surfaceHeight = 0;
@@ -615,7 +611,7 @@ public class CameraController {
                 try {
                     camera.setPreviewDisplay(null);
                 } catch (IOException e) {
-                    logger.error("an IOException occurred during setPreviewDisplay()", e);
+                    logger.e("an IOException occurred during setPreviewDisplay()", e);
                 }
             }
 
@@ -625,24 +621,24 @@ public class CameraController {
     }
 
     private void setSurfaceViewSize(boolean fullScreen, float scale, SurfaceView surfaceView) {
-        logger.debug("setSurfaceViewSize(), fullScreen=" + fullScreen + ", scale=" + scale + ", surfaceView=" + surfaceView);
+        logger.d("setSurfaceViewSize(), fullScreen=" + fullScreen + ", scale=" + scale + ", surfaceView=" + surfaceView);
 
         if (surfaceView == null) {
-            logger.error("surfaceView is null");
+            logger.e("surfaceView is null");
             return;
         }
 
         final LayoutParams layoutParams = surfaceView.getLayoutParams();
 
         if (layoutParams == null) {
-            logger.error("layoutParams is null");
+            logger.e("layoutParams is null");
             return;
         }
 
         final Camera.Size previewSize = getCameraPreviewSize();
 
         if (previewSize == null) {
-            logger.error("previewSize is null");
+            logger.e("previewSize is null");
             return;
         }
 
@@ -701,7 +697,7 @@ public class CameraController {
     }
 
     public boolean setCameraDisplayOrientation(int displayDegrees) {
-        logger.debug("setCameraDisplayOrientation(), displayDegrees=" + displayDegrees);
+        logger.d("setCameraDisplayOrientation(), displayDegrees=" + displayDegrees);
 
         boolean result = false;
 
@@ -718,19 +714,19 @@ public class CameraController {
                         lastCameraDisplayRotation = resultDegrees;
                         result = true;
                     } catch (RuntimeException e) {
-                        logger.error("a RuntimeException occurred during setDisplayOrientation()", e);
+                        logger.e("a RuntimeException occurred during setDisplayOrientation()", e);
                     }
                 }
             }
         } else {
-            logger.error("incorrect displayDegrees: " + displayDegrees);
+            logger.e("incorrect displayDegrees: " + displayDegrees);
         }
 
         return result;
     }
 
     public boolean setCameraRotation(int displayDegrees) {
-        logger.debug("setCameraRotation(), displayDegrees=" + displayDegrees);
+        logger.d("setCameraRotation(), displayDegrees=" + displayDegrees);
 
         boolean result = false;
 
@@ -745,7 +741,7 @@ public class CameraController {
                     int previousRotation = getLastCameraRotation();
 
                     if (previousRotation == ROTATION_NOT_SPECIFIED || previousRotation != resultDegrees) {
-                        logger.debug("camera rotation displayDegrees: " + resultDegrees);
+                        logger.d("camera rotation displayDegrees: " + resultDegrees);
                         try {
                             final Parameters params = camera.getParameters();
                             params.setRotation(resultDegrees);
@@ -756,13 +752,13 @@ public class CameraController {
                             }
                             result = true;
                         } catch (RuntimeException e) {
-                            logger.error("a RuntimeException occurred during get/set camera parameters", e);
+                            logger.e("a RuntimeException occurred during get/set camera parameters", e);
                         }
                     }
                 }
             }
         } else {
-            logger.error("incorrect displayDegrees: " + displayDegrees);
+            logger.e("incorrect displayDegrees: " + displayDegrees);
         }
 
         return result;
@@ -830,12 +826,12 @@ public class CameraController {
 
     private void listenOrientationChanges() {
         if (orientationListener != null) {
-            if (!isOrientationListened && isCameraOpened()) {
+            if (isOrientationListenerEnabled && !isOrientationListened && isCameraOpened()) {
                 try {
                     orientationListener.enable();
                     isOrientationListened = true;
                 } catch (Exception e) {
-                    logger.error("an Exception occurred", e);
+                    logger.e("an Exception occurred", e);
                 }
             }
         }
@@ -847,7 +843,7 @@ public class CameraController {
                 try {
                     orientationListener.disable();
                 } catch (Exception e) {
-                    logger.error("an Exception occurred", e);
+                    logger.e("an Exception occurred", e);
                 }
                 isOrientationListened = false;
             }
@@ -867,27 +863,27 @@ public class CameraController {
         synchronized (sync) {
 
             if (isCameraOpened()) {
-                logger.error("camera is already opened");
+                logger.e("camera is already opened");
                 return false;
             }
 
             if (!isCameraIdValid(cameraId)) {
-                logger.error("incorrect camera id: " + cameraId);
+                logger.e("incorrect camera id: " + cameraId);
                 return false;
             }
 
             long startOpenTime = System.currentTimeMillis();
 
-            logger.debug("opening camera " + cameraId + "...");
+            logger.d("opening camera " + cameraId + "...");
             try {
                 camera = Camera.open(cameraId);
             } catch (RuntimeException e) {
-                logger.error("a RuntimeException occurred during open()", e);
+                logger.e("a RuntimeException occurred during open()", e);
                 return false;
             }
 
             if (camera == null) {
-                logger.error("open camera failed");
+                logger.e("open camera failed");
                 return false;
             }
 
@@ -895,14 +891,14 @@ public class CameraController {
 
                 @Override
                 public void onError(int error, Camera camera) {
-                    logger.error("onError(), error=" + error + ", camera=" + camera);
+                    logger.e("onError(), error=" + error + ", camera=" + camera);
 
                     switch (error) {
                         case Camera.CAMERA_ERROR_SERVER_DIED:
-                            logger.error("camera server died");
+                            logger.e("camera server died");
                             break;
                         case Camera.CAMERA_ERROR_UNKNOWN:
-                            logger.error("camera unknown error");
+                            logger.e("camera unknown error");
                             break;
                     }
 
@@ -924,7 +920,7 @@ public class CameraController {
             final SurfaceHolder cameraSurfaceHolder = surfaceView.getHolder();
 
             if (cameraSurfaceHolder == null) {
-                logger.error("invalid surface, holder is null");
+                logger.e("invalid surface, holder is null");
                 return false;
             }
 
@@ -939,18 +935,18 @@ public class CameraController {
 
             if (isSurfaceCreated()) {
 
-                logger.debug("surface already created, setting preview...");
+                logger.d("surface already created, setting preview...");
 
                 try {
                     camera.setPreviewDisplay(cameraSurfaceHolder);
                 } catch (IOException e) {
-                    logger.error("an IOException occurred during setPreviewDisplay()", e);
+                    logger.e("an IOException occurred during setPreviewDisplay()", e);
                 }
 
                 setupPreview();
             }
 
-            logger.debug("camera open time: " + (System.currentTimeMillis() - startOpenTime) + " ms");
+            logger.d("camera open time: " + (System.currentTimeMillis() - startOpenTime) + " ms");
 
             return true;
         }
@@ -964,7 +960,7 @@ public class CameraController {
                     try {
                         Camera.getCameraInfo(cameraId, cameraInfo);
                     } catch (RuntimeException e) {
-                        logger.error("a RuntimeException occurred during getCameraInfo()", e);
+                        logger.e("a RuntimeException occurred during getCameraInfo()", e);
                         cameraInfo = null;
                     }
                 }
@@ -989,7 +985,7 @@ public class CameraController {
 
     @Nullable
     public Camera getOpenedCameraInstance() {
-        return isCameraOpened()? camera : null;
+        return isCameraOpened() ? camera : null;
     }
 
     public int getOpenedCameraId() {
@@ -1014,13 +1010,13 @@ public class CameraController {
                 if (isCameraLocked())
                     return true;
 
-                logger.debug("locking camera...");
+                logger.d("locking camera...");
                 try {
                     camera.lock();
                     isCameraLocked = true;
                     return true;
                 } catch (Exception e) {
-                    logger.error("an Exception occurred during lock()", e);
+                    logger.e("an Exception occurred during lock()", e);
                 }
             }
             return false;
@@ -1036,13 +1032,13 @@ public class CameraController {
 
                 if (!isCameraLocked())
                     return true;
-                logger.debug("unlocking camera...");
+                logger.d("unlocking camera...");
                 try {
                     camera.unlock();
                     isCameraLocked = false;
                     return true;
                 } catch (Exception e) {
-                    logger.error("an Exception occurred during unlock()", e);
+                    logger.e("an Exception occurred during unlock()", e);
                 }
             }
             return false;
@@ -1062,14 +1058,14 @@ public class CameraController {
             if (!isPreviewStated) {
                 result = false;
                 if (isCameraLocked()) {
-                    logger.debug("starting preview...");
+                    logger.d("starting preview...");
                     try {
                         camera.startPreview();
                         isPreviewStated = true;
                         previewCallback.notifySteamStarted();
                         result = true;
                     } catch (RuntimeException e) {
-                        logger.error("a RuntimeException occurred during startPreview()", e);
+                        logger.e("a RuntimeException occurred during startPreview()", e);
                     }
                 }
             }
@@ -1083,14 +1079,14 @@ public class CameraController {
             if (isPreviewStated) {
                 result = false;
                 if (isCameraLocked()) {
-                    logger.debug("stopping preview...");
+                    logger.d("stopping preview...");
                     try {
                         camera.stopPreview();
                         isPreviewStated = false;
                         // previewCallback.resetFpsCounter();
                         result = true;
                     } catch (RuntimeException e) {
-                        logger.error("a RuntimeException occurred during stopPreview()", e);
+                        logger.e("a RuntimeException occurred during stopPreview()", e);
                     }
                 }
             }
@@ -1118,12 +1114,12 @@ public class CameraController {
     private boolean setupPreview() {
 
         if (!isCameraLocked()) {
-            logger.error("can't setup preview: camera is not locked");
+            logger.e("can't setup preview: camera is not locked");
             return false;
         }
 
         if (cameraSurfaceView == null) {
-            logger.error("can't setup preview: surface is not initialized");
+            logger.e("can't setup preview: surface is not initialized");
             return false;
         }
 
@@ -1156,14 +1152,14 @@ public class CameraController {
      * surfaceDestroyed() callbacks
      */
     public boolean openCamera(int cameraId, @NonNull SurfaceView surfaceView, @Nullable CameraSettings cameraSettings, Handler callbackHandler) {
-        logger.debug("openCamera(), cameraId=" + cameraId + ", setMaxFps=" + cameraSettings);
+        logger.d("openCamera(), cameraId=" + cameraId + ", setMaxFps=" + cameraSettings);
 
         checkReleased();
 
         setCallbackHandler(callbackHandler);
 
         if (isCameraThreadRunning()) {
-            logger.error(CameraThread.class.getSimpleName() + " is already running");
+            logger.e(CameraThread.class.getSimpleName() + " is already running");
             return isCameraOpened();
         }
 
@@ -1196,7 +1192,7 @@ public class CameraController {
     }
 
     public void releaseCamera() {
-        logger.debug("releaseCamera()");
+        logger.d("releaseCamera()");
 
         checkReleased();
 
@@ -1208,7 +1204,7 @@ public class CameraController {
 
             if (isMediaRecorderRecording) {
                 if (stopRecordVideo() == null) {
-                    logger.error("stopRecordVideo() failed");
+                    logger.e("stopRecordVideo() failed");
                 }
             }
 
@@ -1235,7 +1231,7 @@ public class CameraController {
             camera.setPreviewCallback(null);
             // camera.setPreviewDisplay(null);
 
-            logger.debug("releasing camera " + cameraId + "...");
+            logger.d("releasing camera " + cameraId + "...");
             camera.release();
 
             camera = null;
@@ -1267,7 +1263,7 @@ public class CameraController {
                         }
                     }
                 } catch (RuntimeException e) {
-                    logger.error("a RuntimeException occurred during enableShutterSound()", e);
+                    logger.e("a RuntimeException occurred during enableShutterSound()", e);
                 }
             } else {
                 AudioManager mgr = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
@@ -1290,16 +1286,18 @@ public class CameraController {
 
     public void enableOrientationListener(boolean toggle) {
         isOrientationListenerEnabled = toggle;
-        if (toggle) {
-            listenOrientationChanges();
-        } else {
-            unlistenOrientationChanges();
+        if (isOrientationListened != isOrientationListenerEnabled) {
+            if (toggle) {
+                listenOrientationChanges();
+            } else {
+                unlistenOrientationChanges();
+            }
         }
     }
 
     /** */
     public int getLastCameraRotation() {
-        return isOrientationListened? orientationListener.getLastCorrectedRotation() : lastCameraRotation;
+        return isOrientationListened ? orientationListener.getLastCorrectedRotation() : lastCameraRotation;
     }
 
     public int getLastCameraDisplayRotation() {
@@ -1313,7 +1311,7 @@ public class CameraController {
                     return camera.getParameters().getSupportedPreviewSizes();
                 }
             } catch (RuntimeException e) {
-                logger.error("a RuntimeException occurred during getParameters()", e);
+                logger.e("a RuntimeException occurred during getParameters()", e);
             }
             return null;
         }
@@ -1326,7 +1324,7 @@ public class CameraController {
                     return camera.getParameters().getSupportedPictureSizes();
                 }
             } catch (RuntimeException e) {
-                logger.error("a RuntimeException occurred during getParameters()", e);
+                logger.e("a RuntimeException occurred during getParameters()", e);
             }
             return null;
         }
@@ -1339,7 +1337,7 @@ public class CameraController {
                     return camera.getParameters().getSupportedPreviewFormats();
                 }
             } catch (RuntimeException e) {
-                logger.error("a RuntimeException occurred during getParameters()", e);
+                logger.e("a RuntimeException occurred during getParameters()", e);
             }
             return null;
         }
@@ -1352,7 +1350,7 @@ public class CameraController {
                     return camera.getParameters().getSupportedPictureFormats();
                 }
             } catch (RuntimeException e) {
-                logger.error("a RuntimeException occurred during getParameters()", e);
+                logger.e("a RuntimeException occurred during getParameters()", e);
             }
             return null;
         }
@@ -1365,7 +1363,7 @@ public class CameraController {
                     return camera.getParameters().getSupportedFlashModes();
                 }
             } catch (RuntimeException e) {
-                logger.error("a RuntimeException occurred during getParameters()", e);
+                logger.e("a RuntimeException occurred during getParameters()", e);
             }
             return null;
         }
@@ -1378,7 +1376,7 @@ public class CameraController {
                     return camera.getParameters().getSupportedColorEffects();
                 }
             } catch (RuntimeException e) {
-                logger.error("a RuntimeException occurred during getParameters()", e);
+                logger.e("a RuntimeException occurred during getParameters()", e);
             }
             return null;
         }
@@ -1391,7 +1389,7 @@ public class CameraController {
                     return camera.getParameters().getSupportedFocusModes();
                 }
             } catch (RuntimeException e) {
-                logger.error("a RuntimeException occurred during getParameters()", e);
+                logger.e("a RuntimeException occurred during getParameters()", e);
             }
             return null;
         }
@@ -1402,7 +1400,7 @@ public class CameraController {
         synchronized (sync) {
 
             if (!isCameraLocked()) {
-                logger.error("can't get parameters: camera is not locked");
+                logger.e("can't get parameters: camera is not locked");
                 return null;
             }
             final Parameters params;
@@ -1410,7 +1408,7 @@ public class CameraController {
             try {
                 params = camera.getParameters();
             } catch (RuntimeException e) {
-                logger.error("a RuntimeException occurred during getParameters()", e);
+                logger.e("a RuntimeException occurred during getParameters()", e);
                 return null;
             }
 
@@ -1419,10 +1417,10 @@ public class CameraController {
     }
 
     public boolean setCameraPreviewSize(Camera.Size size) {
-        logger.debug("setCameraPreviewSize(), size=" + size);
+        logger.d("setCameraPreviewSize(), size=" + size);
 
         if (size == null) {
-            logger.error("size is null");
+            logger.e("size is null");
             return false;
         }
 
@@ -1430,22 +1428,22 @@ public class CameraController {
     }
 
     public boolean setCameraPreviewSize(int width, int height) {
-        logger.debug("setCameraPreviewSize(), width=" + width + ", height=" + height);
+        logger.d("setCameraPreviewSize(), width=" + width + ", height=" + height);
 
         synchronized (sync) {
 
             if (isMediaRecorderRecording) {
-                logger.error("can't set preview size: media recorder is recording");
+                logger.e("can't set preview size: media recorder is recording");
                 return false;
             }
 
             if (width <= 0 || height <= 0) {
-                logger.error("incorrect size: " + width + "x" + height);
+                logger.e("incorrect size: " + width + "x" + height);
                 return false;
             }
 
             if (!isCameraLocked()) {
-                logger.error("can't get/set parameters: camera is not locked");
+                logger.e("can't get/set parameters: camera is not locked");
                 return false;
             }
 
@@ -1454,7 +1452,7 @@ public class CameraController {
             try {
                 params = camera.getParameters();
             } catch (RuntimeException e) {
-                logger.error("a RuntimeException occurred during getParameters()", e);
+                logger.e("a RuntimeException occurred during getParameters()", e);
                 return false;
             }
 
@@ -1473,15 +1471,15 @@ public class CameraController {
                     }
                 }
             } else {
-                logger.error("no supported preview sizes");
+                logger.e("no supported preview sizes");
             }
 
             if (!isPreviewSizeSupported) {
-                logger.error(" _ preview size " + width + "x" + height + " is NOT supported");
+                logger.e(" _ preview size " + width + "x" + height + " is NOT supported");
                 return false;
 
             } else {
-                logger.debug(" _ preview size " + width + "x" + height + " is supported");
+                logger.d(" _ preview size " + width + "x" + height + " is supported");
                 Size currentSize = params.getPreviewSize();
                 if (currentSize.width != width || currentSize.height != height) {
                     params.setPreviewSize(width, height);
@@ -1493,7 +1491,7 @@ public class CameraController {
                 try {
                     camera.setParameters(params);
                 } catch (RuntimeException e) {
-                    logger.error("a RuntimeException occurred during setParameters()", e);
+                    logger.e("a RuntimeException occurred during setParameters()", e);
                     return false;
                 }
 
@@ -1514,7 +1512,7 @@ public class CameraController {
         synchronized (sync) {
 
             if (!isCameraLocked()) {
-                logger.error("can't get parameters: camera is not locked");
+                logger.e("can't get parameters: camera is not locked");
                 return null;
             }
 
@@ -1523,7 +1521,7 @@ public class CameraController {
             try {
                 params = camera.getParameters();
             } catch (RuntimeException e) {
-                logger.error("a RuntimeException occurred during getParameters()", e);
+                logger.e("a RuntimeException occurred during getParameters()", e);
                 return null;
             }
 
@@ -1532,18 +1530,18 @@ public class CameraController {
     }
 
     private boolean setCameraPreviewFormat(ImageFormat previewFormat) {
-        logger.debug("setCameraPreviewFormat(), previewFormat=" + previewFormat);
+        logger.d("setCameraPreviewFormat(), previewFormat=" + previewFormat);
 
         synchronized (sync) {
 
 
             if (previewFormat == null) {
-                logger.error("previewFormat is null");
+                logger.e("previewFormat is null");
                 return false;
             }
 
             if (!isCameraLocked()) {
-                logger.error("can't get/set parameters: camera is not locked");
+                logger.e("can't get/set parameters: camera is not locked");
                 return false;
             }
 
@@ -1551,7 +1549,7 @@ public class CameraController {
             try {
                 params = camera.getParameters();
             } catch (RuntimeException e) {
-                logger.error("a RuntimeException occurred during getParameters()", e);
+                logger.e("a RuntimeException occurred during getParameters()", e);
                 return false;
             }
 
@@ -1559,7 +1557,7 @@ public class CameraController {
             try {
                 camera.setParameters(params);
             } catch (RuntimeException e) {
-                logger.error("a RuntimeException occurred during setParameters()", e);
+                logger.e("a RuntimeException occurred during setParameters()", e);
                 return false;
             }
 
@@ -1577,7 +1575,7 @@ public class CameraController {
         synchronized (sync) {
 
             if (!isCameraLocked()) {
-                logger.error("can't get parameters: camera is not locked");
+                logger.e("can't get parameters: camera is not locked");
                 return null;
             }
 
@@ -1586,7 +1584,7 @@ public class CameraController {
             try {
                 params = camera.getParameters();
             } catch (RuntimeException e) {
-                logger.error("a RuntimeException occurred during getParameters()", e);
+                logger.e("a RuntimeException occurred during getParameters()", e);
                 return null;
             }
 
@@ -1603,7 +1601,7 @@ public class CameraController {
      * @param cameraSettings incorrect parameters will be replaced with actual
      */
     public boolean setCameraSettings(CameraSettings cameraSettings) {
-        logger.debug("setCameraSettings(), cameraSettings=" + cameraSettings);
+        logger.d("setCameraSettings(), cameraSettings=" + cameraSettings);
 
         synchronized (sync) {
 
@@ -1612,12 +1610,12 @@ public class CameraController {
             }
 
             if (!isCameraLocked()) {
-                logger.error("can't get parameters: camera is not locked");
+                logger.e("can't get parameters: camera is not locked");
                 return false;
             }
 
 //            if (isMediaRecorderRecording) {
-//                logger.error("can't set parameters: media recorder is recording");
+//                logger.e("can't set parameters: media recorder is recording");
 //                return false;
 //            }
 
@@ -1625,7 +1623,7 @@ public class CameraController {
             try {
                 params = camera.getParameters();
             } catch (RuntimeException e) {
-                logger.error("a RuntimeException occurred during getParameters()", e);
+                logger.e("a RuntimeException occurred during getParameters()", e);
                 return false;
             }
 
@@ -1645,16 +1643,16 @@ public class CameraController {
                         }
                     }
                 } else {
-                    logger.error("no supported pictures sizes");
+                    logger.e("no supported pictures sizes");
                 }
             }
 
             if (isPictureSizeSupported) {
-                logger.debug(" _ picture size " + pictureWidth + "x" + pictureHeight
+                logger.d(" _ picture size " + pictureWidth + "x" + pictureHeight
                         + " is supported");
                 params.setPictureSize(pictureWidth, pictureHeight);
             } else {
-                logger.error(" _ picture size " + pictureWidth + "x" + pictureHeight
+                logger.e(" _ picture size " + pictureWidth + "x" + pictureHeight
                         + " is NOT supported");
 
             }
@@ -1675,18 +1673,18 @@ public class CameraController {
                         }
                     }
                 } else {
-                    logger.error("no supported preview formats");
+                    logger.e("no supported preview formats");
                 }
             }
 
             if (isPreviewFormatSupported) {
-                logger.debug(" _ preview format " + previewFormat + " is supported");
+                logger.d(" _ preview format " + previewFormat + " is supported");
                 if (params.getPreviewFormat() != previewFormat.getValue()) {
                     params.setPreviewFormat(previewFormat.getValue());
                     isPreviewFormatChanged = true;
                 }
             } else {
-                logger.error(" _ preview format " + previewFormat + " is NOT supported");
+                logger.e(" _ preview format " + previewFormat + " is NOT supported");
             }
 
             boolean isPictureFormatSupported = false;
@@ -1703,25 +1701,25 @@ public class CameraController {
                         }
                     }
                 } else {
-                    logger.error("no supported picture formats for");
+                    logger.e("no supported picture formats for");
                 }
             }
 
             if (isPictureFormatSupported) {
-                logger.debug(" _ picture format " + pictureFormat + " is supported");
+                logger.d(" _ picture format " + pictureFormat + " is supported");
                 params.setPictureFormat(pictureFormat.getValue());
             } else {
-                logger.error(" _ picture format " + pictureFormat + " is NOT supported");
+                logger.e(" _ picture format " + pictureFormat + " is NOT supported");
             }
 
             int jpegQuality = cameraSettings.getJpegQuality();
 
             if (jpegQuality > 0 && jpegQuality <= 100) {
-                logger.debug(" _ JPEG quality " + jpegQuality + " is supported");
+                logger.d(" _ JPEG quality " + jpegQuality + " is supported");
                 params.setJpegQuality(jpegQuality);
                 params.setJpegThumbnailQuality(jpegQuality);
             } else {
-                logger.error("incorrect jpeg quality: " + jpegQuality);
+                logger.e("incorrect jpeg quality: " + jpegQuality);
             }
 
             boolean isPreviewFpsRangeChanged = false;
@@ -1756,7 +1754,7 @@ public class CameraController {
                 }
 
                 if (isPreviewFpsRangeSupported) {
-                    logger.debug(" _ FPS range " + fpsRange[0] / 1000 + " .. " + fpsRange[1] / 1000 + " is supported");
+                    logger.d(" _ FPS range " + fpsRange[0] / 1000 + " .. " + fpsRange[1] / 1000 + " is supported");
                     int[] currentRange = new int[2];
                     params.getPreviewFpsRange(currentRange);
                     if (currentRange[0] != fpsRange[0] || currentRange[1] != fpsRange[1]) {
@@ -1764,28 +1762,28 @@ public class CameraController {
                         isPreviewFpsRangeChanged = true;
                     }
                 } else {
-                    logger.error(" _ FPS range " +
+                    logger.e(" _ FPS range " +
                             (fpsRange != null ? fpsRange[0] / 1000 + " .. " + fpsRange[1] / 1000 : null) + " is NOT supported");
                 }
 
             } else {
-                logger.error("no supported preview fps ranges");
+                logger.e("no supported preview fps ranges");
             }
 
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.ICE_CREAM_SANDWICH_MR1) {
                 if (params.isVideoStabilizationSupported()) {
-                    logger.debug(" _ video stabilization is supported");
+                    logger.d(" _ video stabilization is supported");
                     params.setVideoStabilization(cameraSettings.isVideoStabilizationEnabled());
                 } else {
-                    logger.error(" _ video stabilization is NOT supported");
+                    logger.e(" _ video stabilization is NOT supported");
                 }
             }
 
             try {
                 camera.setParameters(params);
             } catch (RuntimeException e) {
-                logger.error("a RuntimeException occurred during setParameters()", e);
+                logger.e("a RuntimeException occurred during setParameters()", e);
                 return false;
             }
 
@@ -1807,7 +1805,7 @@ public class CameraController {
         synchronized (sync) {
 
             if (!isCameraLocked()) {
-                logger.error("can't get parameters: camera is not locked");
+                logger.e("can't get parameters: camera is not locked");
                 return false;
             }
 
@@ -1815,7 +1813,7 @@ public class CameraController {
             try {
                 params = camera.getParameters();
             } catch (RuntimeException e) {
-                logger.error("a RuntimeException occurred during getParameters()", e);
+                logger.e("a RuntimeException occurred during getParameters()", e);
                 return false;
             }
 
@@ -1830,19 +1828,19 @@ public class CameraController {
                     }
                 }
             } else {
-                logger.error("no supported color effects");
+                logger.e("no supported color effects");
             }
 
             boolean changed = false;
 
             if (isColorEffectSupported) {
-                logger.debug(" _ color effect " + colorEffect.getValue() + " is supported");
+                logger.d(" _ color effect " + colorEffect.getValue() + " is supported");
                 if (!CompareUtils.stringsEqual(params.getColorEffect(), colorEffect.getValue(), false)) {
                     params.setColorEffect(colorEffect.getValue());
                     changed = true;
                 }
             } else {
-                logger.error(" _ color effect " + colorEffect.getValue() + " is NOT supported");
+                logger.e(" _ color effect " + colorEffect.getValue() + " is NOT supported");
                 return false;
             }
 
@@ -1850,7 +1848,7 @@ public class CameraController {
                 try {
                     camera.setParameters(params);
                 } catch (RuntimeException e) {
-                    logger.error("a RuntimeException occurred during setParameters()", e);
+                    logger.e("a RuntimeException occurred during setParameters()", e);
                     return false;
                 }
             }
@@ -1864,7 +1862,7 @@ public class CameraController {
         synchronized (sync) {
 
             if (!isCameraLocked()) {
-                logger.error("can't get parameters: camera is not locked");
+                logger.e("can't get parameters: camera is not locked");
                 return null;
             }
 
@@ -1872,7 +1870,7 @@ public class CameraController {
             try {
                 params = camera.getParameters();
             } catch (RuntimeException e) {
-                logger.error("a RuntimeException occurred during getParameters()", e);
+                logger.e("a RuntimeException occurred during getParameters()", e);
                 return null;
             }
 
@@ -1885,7 +1883,7 @@ public class CameraController {
         synchronized (sync) {
 
             if (!isCameraLocked()) {
-                logger.error("can't get parameters: camera is not locked");
+                logger.e("can't get parameters: camera is not locked");
                 return false;
             }
 
@@ -1893,7 +1891,7 @@ public class CameraController {
             try {
                 params = camera.getParameters();
             } catch (RuntimeException e) {
-                logger.error("a RuntimeException occurred during getParameters()", e);
+                logger.e("a RuntimeException occurred during getParameters()", e);
                 return false;
             }
 
@@ -1909,19 +1907,19 @@ public class CameraController {
                     }
                 }
             } else {
-                logger.error("no supported focus modes");
+                logger.e("no supported focus modes");
             }
 
             boolean changed = false;
 
             if (!isFocusModeSupported) {
-                logger.debug(" _ focus mode " + focusMode.getValue() + " is supported");
+                logger.d(" _ focus mode " + focusMode.getValue() + " is supported");
                 if (!CompareUtils.stringsEqual(params.getFocusMode(), focusMode.getValue(), false)) {
                     params.setFocusMode(focusMode.getValue());
                     changed = true;
                 }
             } else {
-                logger.error(" _ focus mode " + focusMode.getValue() + " is NOT supported");
+                logger.e(" _ focus mode " + focusMode.getValue() + " is NOT supported");
                 return false;
             }
 
@@ -1929,7 +1927,7 @@ public class CameraController {
                 try {
                     camera.setParameters(params);
                 } catch (RuntimeException e) {
-                    logger.error("a RuntimeException occurred during setParameters()", e);
+                    logger.e("a RuntimeException occurred during setParameters()", e);
                     return false;
                 }
             }
@@ -1944,7 +1942,7 @@ public class CameraController {
         synchronized (sync) {
 
             if (!isCameraLocked()) {
-                logger.error("can't get parameters: camera is not locked");
+                logger.e("can't get parameters: camera is not locked");
                 return null;
             }
 
@@ -1953,7 +1951,7 @@ public class CameraController {
             try {
                 params = camera.getParameters();
             } catch (RuntimeException e) {
-                logger.error("a RuntimeException occurred during getParameters()", e);
+                logger.e("a RuntimeException occurred during getParameters()", e);
                 return null;
             }
 
@@ -1966,7 +1964,7 @@ public class CameraController {
         synchronized (sync) {
 
             if (!isCameraLocked()) {
-                logger.error("can't get parameters: camera is not locked");
+                logger.e("can't get parameters: camera is not locked");
                 return false;
             }
 
@@ -1975,7 +1973,7 @@ public class CameraController {
             try {
                 params = camera.getParameters();
             } catch (RuntimeException e) {
-                logger.error("a RuntimeException occurred during getParameters()", e);
+                logger.e("a RuntimeException occurred during getParameters()", e);
                 return false;
             }
 
@@ -1991,19 +1989,19 @@ public class CameraController {
                     }
                 }
             } else {
-                logger.error("no supported flash modes");
+                logger.e("no supported flash modes");
             }
 
             boolean changed = false;
 
             if (isFlashModeSupported) {
-                logger.debug(" _ flash mode " + flashMode.getValue() + " is supported");
+                logger.d(" _ flash mode " + flashMode.getValue() + " is supported");
                 if (!CompareUtils.stringsEqual(params.getFlashMode(), flashMode.getValue(), false)) {
                     params.setFlashMode(flashMode.getValue());
                     changed = true;
                 }
             } else {
-                logger.error(" _ flash mode " + flashMode.getValue() + " is NOT supported");
+                logger.e(" _ flash mode " + flashMode.getValue() + " is NOT supported");
                 return false;
             }
 
@@ -2011,7 +2009,7 @@ public class CameraController {
                 try {
                     camera.setParameters(params);
                 } catch (RuntimeException e) {
-                    logger.error("a RuntimeException occurred during setParameters()", e);
+                    logger.e("a RuntimeException occurred during setParameters()", e);
                     return false;
                 }
             }
@@ -2047,7 +2045,7 @@ public class CameraController {
         synchronized (sync) {
 
             if (!isCameraLocked()) {
-                logger.error("can't get parameters: camera is not locked");
+                logger.e("can't get parameters: camera is not locked");
                 return null;
             }
 
@@ -2056,7 +2054,7 @@ public class CameraController {
             try {
                 params = camera.getParameters();
             } catch (RuntimeException e) {
-                logger.error("a RuntimeException occurred during getParameters()", e);
+                logger.e("a RuntimeException occurred during getParameters()", e);
                 return null;
             }
 
@@ -2069,7 +2067,7 @@ public class CameraController {
         synchronized (sync) {
 
             if (!isCameraLocked()) {
-                logger.error("can't get parameters: camera is not locked");
+                logger.e("can't get parameters: camera is not locked");
                 return 0;
             }
 
@@ -2078,7 +2076,7 @@ public class CameraController {
             try {
                 params = camera.getParameters();
             } catch (RuntimeException e) {
-                logger.error("a RuntimeException occurred during getParameters()", e);
+                logger.e("a RuntimeException occurred during getParameters()", e);
                 return 0;
             }
 
@@ -2091,7 +2089,7 @@ public class CameraController {
         synchronized (sync) {
 
             if (!isCameraLocked()) {
-                logger.error("can't get parameters: camera is not locked");
+                logger.e("can't get parameters: camera is not locked");
                 return false;
             }
 
@@ -2100,19 +2098,19 @@ public class CameraController {
             try {
                 params = camera.getParameters();
             } catch (RuntimeException e) {
-                logger.error("a RuntimeException occurred during getParameters()", e);
+                logger.e("a RuntimeException occurred during getParameters()", e);
                 return false;
             }
 
             Pair<Integer, Integer> range = getMinMaxExposureCompensation();
 
             if (!isExposureCompensationSupported(range)) {
-                logger.error("exposure compensation is not supported");
+                logger.e("exposure compensation is not supported");
                 return false;
             }
 
             if (value < range.first || value > range.second) {
-                logger.error("incorrect exposure compensation value: " + value);
+                logger.e("incorrect exposure compensation value: " + value);
                 return false;
             }
 
@@ -2127,7 +2125,7 @@ public class CameraController {
                 try {
                     camera.setParameters(params);
                 } catch (RuntimeException e) {
-                    logger.error("a RuntimeException occurred during setParameters()", e);
+                    logger.e("a RuntimeException occurred during setParameters()", e);
                     return false;
                 }
             }
@@ -2153,7 +2151,7 @@ public class CameraController {
         synchronized (sync) {
 
             if (!isCameraLocked()) {
-                logger.error("can't get parameters: camera is not locked");
+                logger.e("can't get parameters: camera is not locked");
                 return null;
             }
 
@@ -2162,7 +2160,7 @@ public class CameraController {
             try {
                 params = camera.getParameters();
             } catch (RuntimeException e) {
-                logger.error("a RuntimeException occurred during getParameters()", e);
+                logger.e("a RuntimeException occurred during getParameters()", e);
                 return null;
             }
 
@@ -2175,7 +2173,7 @@ public class CameraController {
         synchronized (sync) {
 
             if (!isCameraLocked()) {
-                logger.error("can't get parameters: camera is not locked");
+                logger.e("can't get parameters: camera is not locked");
                 return false;
             }
 
@@ -2185,7 +2183,7 @@ public class CameraController {
             try {
                 params = camera.getParameters();
             } catch (RuntimeException e) {
-                logger.error("a RuntimeException occurred during getParameters()", e);
+                logger.e("a RuntimeException occurred during getParameters()", e);
                 return false;
             }
 
@@ -2200,7 +2198,7 @@ public class CameraController {
                 try {
                     camera.setParameters(params);
                 } catch (RuntimeException e) {
-                    logger.error("a RuntimeException occurred during setParameters()", e);
+                    logger.e("a RuntimeException occurred during setParameters()", e);
                     return false;
                 }
             }
@@ -2212,7 +2210,7 @@ public class CameraController {
     public int getMaxZoom() {
         synchronized (sync) {
             if (!isCameraLocked()) {
-                logger.error("can't get parameters: camera is not locked");
+                logger.e("can't get parameters: camera is not locked");
                 return ZOOM_NOT_SPECIFIED;
             }
 
@@ -2220,7 +2218,7 @@ public class CameraController {
             try {
                 params = camera.getParameters();
             } catch (RuntimeException e) {
-                logger.error("a RuntimeException occurred during getParameters()", e);
+                logger.e("a RuntimeException occurred during getParameters()", e);
                 return ZOOM_NOT_SPECIFIED;
             }
 
@@ -2232,7 +2230,7 @@ public class CameraController {
     public int getZoom() {
         synchronized (sync) {
             if (!isCameraLocked()) {
-                logger.error("can't get parameters: camera is not locked");
+                logger.e("can't get parameters: camera is not locked");
                 return ZOOM_NOT_SPECIFIED;
             }
 
@@ -2240,7 +2238,7 @@ public class CameraController {
             try {
                 params = camera.getParameters();
             } catch (RuntimeException e) {
-                logger.error("a RuntimeException occurred during getParameters()", e);
+                logger.e("a RuntimeException occurred during getParameters()", e);
                 return ZOOM_NOT_SPECIFIED;
             }
 
@@ -2253,7 +2251,7 @@ public class CameraController {
         synchronized (sync) {
 
             if (!isCameraLocked()) {
-                logger.error("can't get parameters: camera is not locked");
+                logger.e("can't get parameters: camera is not locked");
                 return false;
             }
 
@@ -2261,7 +2259,7 @@ public class CameraController {
             try {
                 params = camera.getParameters();
             } catch (RuntimeException e) {
-                logger.error("a RuntimeException occurred during getParameters()", e);
+                logger.e("a RuntimeException occurred during getParameters()", e);
                 return false;
             }
 
@@ -2270,7 +2268,7 @@ public class CameraController {
             if (zoom != ZOOM_NOT_SPECIFIED) {
                 if (zoom > 0 || zoom == ZOOM_MIN || zoom == ZOOM_MAX) {
                     if (params.isZoomSupported()) {
-                        logger.debug("zoom is supported");
+                        logger.d("zoom is supported");
                         int maxZoom = params.getMaxZoom();
                         zoom = zoom == ZOOM_MAX ? maxZoom : zoom;
                         if (zoom <= maxZoom || zoom == ZOOM_MIN) {
@@ -2279,14 +2277,14 @@ public class CameraController {
                                 changed = true;
                             }
                         } else {
-                            logger.error("incorrect zoom level: " + zoom);
+                            logger.e("incorrect zoom level: " + zoom);
                         }
                     } else {
-                        logger.error(" _ zoom is NOT supported");
+                        logger.e(" _ zoom is NOT supported");
                         return false;
                     }
                 } else {
-                    logger.error("incorrect zoom level: " + zoom);
+                    logger.e("incorrect zoom level: " + zoom);
                     return false;
                 }
             }
@@ -2295,7 +2293,7 @@ public class CameraController {
                 try {
                     camera.setParameters(params);
                 } catch (RuntimeException e) {
-                    logger.error("a RuntimeException occurred during setParameters()", e);
+                    logger.e("a RuntimeException occurred during setParameters()", e);
                     return false;
                 }
             }
@@ -2305,29 +2303,29 @@ public class CameraController {
     }
 
     public boolean takePhoto(String photoDirectoryPath, String photoFileName, final boolean writeToFile) {
-        logger.debug("takePhoto(), photoDirectoryPath=" + photoDirectoryPath + ", photoFileName=" + photoFileName + ", writeToFile=" + writeToFile);
+        logger.d("takePhoto(), photoDirectoryPath=" + photoDirectoryPath + ", photoFileName=" + photoFileName + ", writeToFile=" + writeToFile);
 
         checkReleased();
 
         if (!TextUtils.isEmpty(photoFileName) && photoFileName.contains(File.separator)) {
-            logger.error("photo file name " + photoFileName + " contains path separators!");
+            logger.e("photo file name " + photoFileName + " contains path separators!");
             return false;
         }
 
         synchronized (sync) {
 
             if (currentCameraState != CameraState.IDLE) {
-                logger.error("current camera state is not IDLE! state is " + currentCameraState);
+                logger.e("current camera state is not IDLE! state is " + currentCameraState);
                 return currentCameraState == CameraState.TAKING_PHOTO;
             }
 
             if (!isCameraLocked()) {
-                logger.error("camera is not locked");
+                logger.e("camera is not locked");
                 return false;
             }
 
             if (!isSurfaceCreated()) {
-                logger.error("surface is not created");
+                logger.e("surface is not created");
                 return false;
             }
 
@@ -2336,7 +2334,7 @@ public class CameraController {
             CameraSettings currentCameraSettings = getCurrentCameraSettings();
 
             if (currentCameraSettings == null) {
-                logger.error("can't retrieve current camera settings");
+                logger.e("can't retrieve current camera settings");
                 return false;
             }
 
@@ -2345,7 +2343,7 @@ public class CameraController {
             try {
                 params = camera.getParameters();
             } catch (RuntimeException e) {
-                logger.error("a RuntimeException occurred during getParameters()", e);
+                logger.e("a RuntimeException occurred during getParameters()", e);
             }
 
             FocusMode focusMode = null;
@@ -2362,7 +2360,7 @@ public class CameraController {
                 }
 
                 if ((this.lastPhotoFile = FileHelper.checkPathNoThrow(photoDirectoryPath, photoFileName)) == null) {
-                    logger.error("incorrect photo path: " + photoDirectoryPath + File.separator + photoFileName);
+                    logger.e("incorrect photo path: " + photoDirectoryPath + File.separator + photoFileName);
                     return false;
                 }
             } else {
@@ -2381,7 +2379,7 @@ public class CameraController {
 
                     @Override
                     public void run() {
-                        logger.error("auto focus callback not triggered");
+                        logger.e("auto focus callback not triggered");
                         synchronized (sync) {
                             autoFocusResetRunnable = null;
                             if (isCameraLocked()) {
@@ -2392,19 +2390,19 @@ public class CameraController {
                     }
                 }, AUTO_FOCUS_TIMEOUT);
 
-                logger.info("taking photo with auto focus...");
+                logger.i("taking photo with auto focus...");
                 camera.autoFocus(new AutoFocusCallback() {
 
                     @Override
                     public void onAutoFocus(boolean success, Camera camera) {
-                        logger.debug("onAutoFocus(), success=" + true);
+                        logger.d("onAutoFocus(), success=" + true);
                         cancelResetAutoFocusCallback();
                         takePhotoInternal(writeToFile);
                     }
                 });
 
             } else {
-                logger.info("taking photo without auto focus...");
+                logger.i("taking photo without auto focus...");
                 takePhotoInternal(writeToFile);
             }
 
@@ -2425,7 +2423,7 @@ public class CameraController {
                 }
             }).get(EXECUTOR_CALL_TIMEOUT, TimeUnit.SECONDS);
         } catch (Exception e) {
-            logger.error("an Exception occurred during get()", e);
+            logger.e("an Exception occurred during get()", e);
             reopenCamera(cameraId, cameraSurfaceView, getCurrentCameraSettings(), callbackHandler);
         }
     }
@@ -2441,7 +2439,7 @@ public class CameraController {
 
         @Override
         public void onPictureTaken(byte[] data, Camera camera) {
-            logger.debug(PictureRawCallback.class.getSimpleName() + " :: onPictureTaken()");
+            logger.d(PictureRawCallback.class.getSimpleName() + " :: onPictureTaken()");
 
             if (isReleased()) {
                 return;
@@ -2468,7 +2466,7 @@ public class CameraController {
 
         @Override
         public void onPictureTaken(final byte[] data, Camera camera) {
-            logger.debug(PictureReadyCallback.class.getSimpleName() + " :: onPictureTaken()");
+            logger.d(PictureReadyCallback.class.getSimpleName() + " :: onPictureTaken()");
 
             if (isReleased()) {
                 return;
@@ -2480,15 +2478,15 @@ public class CameraController {
                     throw new IllegalStateException("current camera state is not " + CameraState.TAKING_PHOTO);
                 }
 
-                logger.debug("last photo file: " + lastPhotoFile);
+                logger.d("last photo file: " + lastPhotoFile);
                 if (lastPhotoFile != null) {
                     if (FileHelper.writeBytesToFile(lastPhotoFile, data, false)) {
                         if (isStoreLocationEnabled() && lastLocation != null)
                             if (!FileHelper.writeExifLocation(lastPhotoFile, lastLocation)) {
-                                logger.error("can't write location to exif");
+                                logger.e("can't write location to exif");
                             }
                     } else {
-                        logger.error("can't write picture data to file");
+                        logger.e("can't write picture data to file");
                     }
                 }
 
@@ -2500,8 +2498,8 @@ public class CameraController {
 
                 muteSound(false);
 
-                long elapsedTime = lastTakePhotoStartTime >= 0? System.currentTimeMillis() - lastTakePhotoStartTime : 0;
-                elapsedTime = elapsedTime < 0? 0 : elapsedTime;
+                long elapsedTime = lastTakePhotoStartTime >= 0 ? System.currentTimeMillis() - lastTakePhotoStartTime : 0;
+                elapsedTime = elapsedTime < 0 ? 0 : elapsedTime;
 
                 if (writeToFile) {
                     photoReadyListeners.notifyPhotoFileReady(lastPhotoFile, elapsedTime);
@@ -2520,7 +2518,7 @@ public class CameraController {
                     return camera.getParameters().getSupportedVideoSizes();
                 }
             } catch (RuntimeException e) {
-                logger.error("a RuntimeException occurred during getParameters()", e);
+                logger.e("a RuntimeException occurred during getParameters()", e);
             }
             return null;
         }
@@ -2529,15 +2527,15 @@ public class CameraController {
     public VideoSettings getLowVideoSettings() {
 
         if (!isCameraLocked()) {
-            logger.error("can't get parameters: camera is not locked");
+            logger.e("can't get parameters: camera is not locked");
             return null;
         }
 
         final Size lowVideoSize = findLowHighSize(getSupportedVideoSizes(), true);
         if (lowVideoSize != null) {
-            logger.debug(" _ low VIDEO size: " + lowVideoSize.width + "x" + lowVideoSize.height);
+            logger.d(" _ low VIDEO size: " + lowVideoSize.width + "x" + lowVideoSize.height);
         } else {
-            logger.error(" _ low VIDEO size is null");
+            logger.e(" _ low VIDEO size is null");
         }
 
         return new VideoSettings(cameraId, VideoQuality.LOW, VideoEncoder.H264, AudioEncoder.AAC, false,
@@ -2548,15 +2546,15 @@ public class CameraController {
     public VideoSettings getMediumVideoSettings() {
 
         if (!isCameraLocked()) {
-            logger.error("can't get parameters: camera is not locked");
+            logger.e("can't get parameters: camera is not locked");
             return null;
         }
 
         final Size mediumVideoSize = findMediumSize(getSupportedVideoSizes());
         if (mediumVideoSize != null) {
-            logger.debug(" _ medium VIDEO size: " + mediumVideoSize.width + "x" + mediumVideoSize.height);
+            logger.d(" _ medium VIDEO size: " + mediumVideoSize.width + "x" + mediumVideoSize.height);
         } else {
-            logger.error(" _ medium VIDEO size is null");
+            logger.e(" _ medium VIDEO size is null");
         }
 
         return new VideoSettings(cameraId, VideoQuality.DEFAULT, VideoEncoder.H264, AudioEncoder.AAC, false,
@@ -2567,15 +2565,15 @@ public class CameraController {
     public VideoSettings getHighVideoSettings() {
 
         if (!isCameraLocked()) {
-            logger.error("can't get parameters: camera is not locked");
+            logger.e("can't get parameters: camera is not locked");
             return null;
         }
 
         final Size highVideoSize = findLowHighSize(getSupportedVideoSizes(), false);
         if (highVideoSize != null) {
-            logger.debug(" _ high VIDEO size: " + highVideoSize.width + "x" + highVideoSize.height);
+            logger.d(" _ high VIDEO size: " + highVideoSize.width + "x" + highVideoSize.height);
         } else {
-            logger.error(" _ high VIDEO size is null");
+            logger.e(" _ high VIDEO size is null");
         }
 
         return new VideoSettings(cameraId, VideoQuality.HIGH, VideoEncoder.H264, AudioEncoder.AAC, false,
@@ -2586,7 +2584,7 @@ public class CameraController {
     public boolean isVideoSizeSupported(int width, int height) {
 
         if (!isCameraLocked()) {
-            logger.error("can't get parameters: camera is not locked");
+            logger.e("can't get parameters: camera is not locked");
             return false;
         }
 
@@ -2612,20 +2610,20 @@ public class CameraController {
      * @param fpsRange      if is not null and requested fps falls within the range, it will be applied
      */
     private boolean setMediaRecorderParams(CamcorderProfile profile, VideoSettings videoSettings, @Nullable Pair<Integer, Integer> fpsRange) {
-        logger.debug("setMediaRecorderParams(), profile=" + profile + ", videoSettings=" + videoSettings + ", fpsRange=" + fpsRange);
+        logger.d("setMediaRecorderParams(), profile=" + profile + ", videoSettings=" + videoSettings + ", fpsRange=" + fpsRange);
 
         if (videoSettings == null) {
-            logger.error("can't set media recorder parameters: videoSettings is null");
+            logger.e("can't set media recorder parameters: videoSettings is null");
             return false;
         }
 
         if (mediaRecorder == null) {
-            logger.error("can't set media recorder parameters: mediaRecorder is null");
+            logger.e("can't set media recorder parameters: mediaRecorder is null");
             return false;
         }
 
         if (isMediaRecorderRecording) {
-            logger.error("can't set media recorder parameters: mediaRecorder is already recording");
+            logger.e("can't set media recorder parameters: mediaRecorder is already recording");
             return false;
         }
 
@@ -2642,7 +2640,7 @@ public class CameraController {
                         try {
                             Thread.sleep(2000);
                         } catch (InterruptedException e) {
-                            logger.error("an InterruptedException occurred during sleep()", e);
+                            logger.e("an InterruptedException occurred during sleep()", e);
                             Thread.currentThread().interrupt();
                         }
                     }
@@ -2664,10 +2662,10 @@ public class CameraController {
 
         if (profile != null) {
 
-            logger.debug(camcorderProfileToString(profile));
+            logger.d(camcorderProfileToString(profile));
 
             if (videoSettings.getVideoEncoder() != VideoEncoder.DEFAULT && profile.videoCodec != videoSettings.getVideoEncoder().getValue()) {
-                logger.debug("videoCodec in profile (" + profile.videoCodec + ") is not the same as in videoSettings ("
+                logger.d("videoCodec in profile (" + profile.videoCodec + ") is not the same as in videoSettings ("
                         + videoSettings.getVideoEncoder().getValue() + "), changing...");
                 profile.videoCodec = videoSettings.getVideoEncoder().getValue();
                 profile.fileFormat = getOutputFormatByVideoEncoder(videoSettings.getVideoEncoder());
@@ -2675,7 +2673,7 @@ public class CameraController {
             videoSettings.setVideoEncoder(VideoEncoder.fromValue(profile.videoCodec));
 
             if (videoSettings.getAudioEncoder() != AudioEncoder.DEFAULT && profile.audioCodec != videoSettings.getAudioEncoder().getValue()) {
-                logger.debug("audioCodec in profile (" + profile.audioCodec + ") is not the same as in videoSettings ("
+                logger.d("audioCodec in profile (" + profile.audioCodec + ") is not the same as in videoSettings ("
                         + videoSettings.getAudioEncoder().getValue() + "), changing...");
                 profile.audioCodec = videoSettings.getAudioEncoder().getValue();
             }
@@ -2685,17 +2683,17 @@ public class CameraController {
 
                 try {
 
-                    logger.debug("setting profile " + profile.quality + "...");
+                    logger.d("setting profile " + profile.quality + "...");
                     mediaRecorder.setProfile(profile);
 
                 } catch (RuntimeException e) {
-                    logger.error("a RuntimeException occurred during setProfile()", e);
+                    logger.e("a RuntimeException occurred during setProfile()", e);
                     return false;
                 }
 
             } else {
 
-                logger.debug("recording audio disabled, setting parameters manually by profile " + profile.quality + "...");
+                logger.d("recording audio disabled, setting parameters manually by profile " + profile.quality + "...");
 
                 mediaRecorder.setOutputFormat(profile.fileFormat);
                 mediaRecorder.setVideoFrameRate(profile.videoFrameRate);
@@ -2707,32 +2705,32 @@ public class CameraController {
 
         } else {
 
-            logger.debug("profile is null, setting parameters manually...");
+            logger.d("profile is null, setting parameters manually...");
 
             mediaRecorder.setOutputFormat(getOutputFormatByVideoEncoder(videoSettings.getVideoEncoder()));
-            logger.debug("output format: " + getOutputFormatByVideoEncoder(videoSettings.getVideoEncoder()));
+            logger.d("output format: " + getOutputFormatByVideoEncoder(videoSettings.getVideoEncoder()));
 
             mediaRecorder.setVideoFrameRate(videoFrameRate);
-            logger.debug("video frame rate: " + videoFrameRate);
+            logger.d("video frame rate: " + videoFrameRate);
 
             if (videoSettings.getVideoFrameWidth() > 0 && videoSettings.getVideoFrameHeight() > 0) {
                 mediaRecorder.setVideoSize(videoSettings.getVideoFrameWidth(), videoSettings.getVideoFrameHeight());
-                logger.debug("video frame size: width=" + videoSettings.getVideoFrameWidth() + ", height="
+                logger.d("video frame size: width=" + videoSettings.getVideoFrameWidth() + ", height="
                         + videoSettings.getVideoFrameHeight());
             } else {
-                logger.error("incorrect video frame size: " + videoSettings.getVideoFrameWidth() + "x"
+                logger.e("incorrect video frame size: " + videoSettings.getVideoFrameWidth() + "x"
                         + videoSettings.getVideoFrameHeight());
             }
 
             if (!videoSettings.isAudioDisabled()) {
                 mediaRecorder.setAudioEncoder(videoSettings.getAudioEncoder().getValue());
-                logger.debug("audio encoder: " + videoSettings.getAudioEncoder());
+                logger.d("audio encoder: " + videoSettings.getAudioEncoder());
             } else {
-                logger.debug("recording audio disabled");
+                logger.d("recording audio disabled");
             }
 
             mediaRecorder.setVideoEncoder(videoSettings.getVideoEncoder().getValue());
-            logger.debug("video encoder: " + videoSettings.getVideoEncoder());
+            logger.d("video encoder: " + videoSettings.getVideoEncoder());
         }
 
         return true;
@@ -2766,15 +2764,15 @@ public class CameraController {
      * must be called after setOutputFormat()
      */
     private void setVideoRecordLimit(VideoRecordLimit recLimit) {
-        logger.debug("setVideoRecordLimit(), recLimit=" + recLimit);
+        logger.d("setVideoRecordLimit(), recLimit=" + recLimit);
 
         if (mediaRecorder == null) {
-            logger.error("can't set video record limit: mediaRecorder is null");
+            logger.e("can't set video record limit: mediaRecorder is null");
             return;
         }
 
         if (isMediaRecorderRecording) {
-            logger.error("can't set video record limit: mediaRecorder is already recording");
+            logger.e("can't set video record limit: mediaRecorder is already recording");
             return;
         }
 
@@ -2782,13 +2780,13 @@ public class CameraController {
             switch (recLimit.getRecordLimitWhat()) {
                 case TIME:
                     if (recLimit.getRecordLimitValue() > 0) {
-                        logger.debug("setting max duration " + (int) recLimit.getRecordLimitValue() + "...");
+                        logger.d("setting max duration " + (int) recLimit.getRecordLimitValue() + "...");
                         mediaRecorder.setMaxDuration((int) recLimit.getRecordLimitValue());
                     }
                     break;
                 case SIZE:
                     if (recLimit.getRecordLimitValue() > 0) {
-                        logger.debug("setting max file size " + recLimit.getRecordLimitValue() + "...");
+                        logger.d("setting max file size " + recLimit.getRecordLimitValue() + "...");
                         mediaRecorder.setMaxFileSize(recLimit.getRecordLimitValue());
                     }
                     break;
@@ -2803,7 +2801,7 @@ public class CameraController {
         synchronized (sync) {
 
             if (!isCameraLocked()) {
-                logger.error("can't get/set parameters: camera is not locked");
+                logger.e("can't get/set parameters: camera is not locked");
                 return false;
             }
 
@@ -2811,7 +2809,7 @@ public class CameraController {
             try {
                 params = camera.getParameters();
             } catch (RuntimeException e) {
-                logger.error("a RuntimeException occurred during getParameters()", e);
+                logger.e("a RuntimeException occurred during getParameters()", e);
                 return false;
             }
 
@@ -2823,7 +2821,7 @@ public class CameraController {
                 camera.setParameters(params);
                 result = true;
             } catch (RuntimeException e) {
-                logger.error("a RuntimeException occurred during setParameters()", e);
+                logger.e("a RuntimeException occurred during setParameters()", e);
             }
 
             if (result && isPreviewStated) {
@@ -2841,17 +2839,17 @@ public class CameraController {
             final long startPrepareTime = System.currentTimeMillis();
 
             if (!isCameraOpened()) {
-                logger.error("camera is not opened");
+                logger.e("camera is not opened");
                 return false;
             }
 
             if (!isSurfaceCreated()) {
-                logger.error("surface is not created");
+                logger.e("surface is not created");
                 return false;
             }
 
             if (isMediaRecorderRecording) {
-                logger.error("mediaRecorder is already recording");
+                logger.e("mediaRecorder is already recording");
                 return false;
             }
 
@@ -2866,11 +2864,11 @@ public class CameraController {
             if (videoSettings.getQuality() != VideoQuality.DEFAULT) {
 
                 if (CamcorderProfile.hasProfile(cameraId, videoSettings.getQuality().getValue())) {
-                    logger.info("profile " + videoSettings.getQuality().getValue() + " is supported for camera with id " + cameraId
+                    logger.i("profile " + videoSettings.getQuality().getValue() + " is supported for camera with id " + cameraId
                             + ", getting...");
                     profile = CamcorderProfile.get(cameraId, videoSettings.getQuality().getValue());
                 } else {
-                    logger.error("profile " + videoSettings.getQuality().getValue() + " is NOT supported, changing quality to default...");
+                    logger.e("profile " + videoSettings.getQuality().getValue() + " is NOT supported, changing quality to default...");
                     videoSettings.setQuality(cameraId, VideoQuality.DEFAULT);
                 }
             }
@@ -2878,10 +2876,10 @@ public class CameraController {
 
             if (profile == null) {
                 if (isVideoSizeSupported(videoSettings.getVideoFrameWidth(), videoSettings.getVideoFrameHeight())) {
-                    logger.debug("VIDEO size " + videoSettings.getVideoFrameWidth() + "x" + videoSettings.getVideoFrameHeight()
+                    logger.d("VIDEO size " + videoSettings.getVideoFrameWidth() + "x" + videoSettings.getVideoFrameHeight()
                             + " is supported");
                 } else {
-                    logger.error("VIDEO size " + videoSettings.getVideoFrameWidth() + "x" + videoSettings.getVideoFrameHeight()
+                    logger.e("VIDEO size " + videoSettings.getVideoFrameWidth() + "x" + videoSettings.getVideoFrameHeight()
                             + " is NOT supported, getting medium...");
                     final VideoSettings mediumVideoSettings = getMediumVideoSettings();
                     videoSettings.setVideoFrameSize(mediumVideoSettings.getVideoFrameWidth(), mediumVideoSettings.getVideoFrameHeight());
@@ -2898,7 +2896,7 @@ public class CameraController {
             setRecordingHint(true);
 
             if (!unlockCamera()) {
-                logger.error("unlocking camera failed");
+                logger.e("unlocking camera failed");
                 if (wasStarted) {
                     if (startPreview()) {
                         setPreviewCallback();
@@ -2913,7 +2911,7 @@ public class CameraController {
 
                 @Override
                 public void onError(MediaRecorder mediaRecorder, int what, int extra) {
-                    logger.error("onError(), what=" + what + ", extra=" + extra);
+                    logger.e("onError(), what=" + what + ", extra=" + extra);
                     if (isReleased()) {
                         return;
                     }
@@ -2930,7 +2928,7 @@ public class CameraController {
                     switch (what) {
                         case MediaRecorder.MEDIA_RECORDER_INFO_MAX_FILESIZE_REACHED:
                         case MediaRecorder.MEDIA_RECORDER_INFO_MAX_DURATION_REACHED:
-                            logger.debug("onInfo(), what=" + what + ", extra=" + extra);
+                            logger.d("onInfo(), what=" + what + ", extra=" + extra);
                             if (isReleased()) {
                                 return;
                             }
@@ -2949,14 +2947,14 @@ public class CameraController {
 
             if (isStoreLocationEnabled() && lastLocation != null) {
                 if (Build.VERSION.SDK_INT > Build.VERSION_CODES.ICE_CREAM_SANDWICH) {
-                    logger.debug("set video location: latitude " + lastLocation.getLatitude() + " longitude " + lastLocation.getLongitude()
+                    logger.d("set video location: latitude " + lastLocation.getLatitude() + " longitude " + lastLocation.getLongitude()
                             + " accuracy " + lastLocation.getAccuracy());
                     mediaRecorder.setLocation((float) lastLocation.getLatitude(), (float) lastLocation.getLongitude());
                 }
             }
 
             if (!setMediaRecorderParams(profile, videoSettings, previewFpsRange)) {
-                logger.error("setMediaRecorderParams() failed");
+                logger.e("setMediaRecorderParams() failed");
 
                 releaseMediaRecorder();
                 return false;
@@ -2971,10 +2969,10 @@ public class CameraController {
             }
 
             lastVideoFile = FileHelper.createNewFile(fileName, saveDirectoryPath);
-            logger.info("lastVideoFile: " + lastVideoFile);
+            logger.i("lastVideoFile: " + lastVideoFile);
 
             if (lastVideoFile == null) {
-                logger.error("can't create video file");
+                logger.e("can't create video file");
                 return false;
             }
 
@@ -2988,18 +2986,18 @@ public class CameraController {
             try {
                 mediaRecorder.prepare();
             } catch (Exception e) {
-                logger.error("an Exception occurred during prepare()", e);
+                logger.e("an Exception occurred during prepare()", e);
                 releaseMediaRecorder();
                 return false;
             }
 
-            logger.debug("media recorder prepare time: " + (System.currentTimeMillis() - startPrepareTime) + " ms");
+            logger.d("media recorder prepare time: " + (System.currentTimeMillis() - startPrepareTime) + " ms");
             return true;
         }
     }
 
     private boolean releaseMediaRecorder() {
-        logger.debug("releaseMediaRecorder()");
+        logger.d("releaseMediaRecorder()");
 
         synchronized (sync) {
 
@@ -3018,7 +3016,7 @@ public class CameraController {
                             mediaRecorder.reset();
                             mediaRecorder.release();
 
-                            logger.debug("media recorder release time: " + (System.currentTimeMillis() - startReleaseTime) + " ms");
+                            logger.d("media recorder release time: " + (System.currentTimeMillis() - startReleaseTime) + " ms");
                             return true;
                         }
                         return false;
@@ -3026,7 +3024,7 @@ public class CameraController {
                 }).get(EXECUTOR_CALL_TIMEOUT, TimeUnit.SECONDS);
 
             } catch (Exception e) {
-                logger.error("an Exception occurred during get()", e);
+                logger.e("an Exception occurred during get()", e);
 
                 return false;
 
@@ -3035,13 +3033,13 @@ public class CameraController {
                 mediaRecorder = null;
 
                 if (!lockCamera()) {
-                    logger.error("locking camera failed");
+                    logger.e("locking camera failed");
                 }
 
                 try {
                     camera.reconnect();
                 } catch (IOException e) {
-                    logger.error("an IOException occures during reconnect()", e);
+                    logger.e("an IOException occures during reconnect()", e);
                 }
 
                 if (callbackBufferQueueSize > 0)
@@ -3055,7 +3053,7 @@ public class CameraController {
     }
 
     public boolean startRecordVideo(VideoSettings videoSettings, VideoRecordLimit recLimit, String saveDirectoryPath, String fileName) {
-        logger.debug("startRecordVideo(), videoSettings=" + videoSettings + "deleteTempVideoFiles="
+        logger.d("startRecordVideo(), videoSettings=" + videoSettings + "deleteTempVideoFiles="
                 + ", recLimit=" + recLimit + ", saveDirectoryPath=" + saveDirectoryPath + ", fileName=" + fileName);
 
         checkReleased();
@@ -3063,25 +3061,25 @@ public class CameraController {
         synchronized (sync) {
 
             if (currentCameraState != CameraState.IDLE) {
-                logger.error("current camera state is not IDLE! state is " + currentCameraState);
+                logger.e("current camera state is not IDLE! state is " + currentCameraState);
                 return currentCameraState == CameraState.RECORDING_VIDEO;
             }
 
             if (prepareMediaRecorder(videoSettings, recLimit, saveDirectoryPath, fileName)) {
 
                 final long startStartingTime = System.currentTimeMillis();
-                logger.info("starting record video...");
+                logger.i("starting record video...");
 
                 muteSound(true);
 
                 try {
                     mediaRecorder.start();
                 } catch (IllegalStateException e) {
-                    logger.error("an IllegalStateException occurred during start()", e);
+                    logger.e("an IllegalStateException occurred during start()", e);
                     releaseMediaRecorder();
                     return false;
                 }
-                logger.debug("video recording has been started (" + (System.currentTimeMillis() - startStartingTime) + " ms)");
+                logger.d("video recording has been started (" + (System.currentTimeMillis() - startStartingTime) + " ms)");
 
                 muteSound(false);
 
@@ -3099,7 +3097,7 @@ public class CameraController {
     }
 
     public File stopRecordVideo() {
-        logger.debug("stopRecordVideo()");
+        logger.d("stopRecordVideo()");
 
         checkReleased();
 
@@ -3117,9 +3115,9 @@ public class CameraController {
                             if (mediaRecorder != null) {
 
                                 final long startStoppingTime = System.currentTimeMillis();
-                                logger.info("stopping record video...");
+                                logger.i("stopping record video...");
                                 mediaRecorder.stop();
-                                logger.debug("video recording has been stopped (" + (System.currentTimeMillis() - startStoppingTime) + " ms)");
+                                logger.d("video recording has been stopped (" + (System.currentTimeMillis() - startStoppingTime) + " ms)");
 
                                 return true;
                             } else {
@@ -3129,7 +3127,7 @@ public class CameraController {
                     }).get(EXECUTOR_CALL_TIMEOUT, TimeUnit.SECONDS);
 
                 } catch (Exception e) {
-                    logger.error("an Exception occurred during get()", e);
+                    logger.e("an Exception occurred during get()", e);
                     mediaRecorder = null;
                 }
 
@@ -3140,7 +3138,7 @@ public class CameraController {
                 setCurrentCameraState(CameraState.IDLE);
 
             } else {
-                logger.error("mediaRecorder is not recording");
+                logger.e("mediaRecorder is not recording");
                 return null;
             }
 
@@ -3150,10 +3148,10 @@ public class CameraController {
                 try {
                     makePreviewThreadPoolExecutor.execute(new MakePreviewRunnable(new MakePreviewRunnableInfo(videoPreviewIdsHolder.incrementAndGet(), lastVideoFile.getName(), currentVideoSettings, lastVideoFile)));
                 } catch (NullPointerException e) {
-                    logger.error("a NullPointerException occurred during getName(): " + e.getMessage());
+                    logger.e("a NullPointerException occurred during getName(): " + e.getMessage());
                 }
             } else {
-                logger.error("makePreviewThreadPoolExecutor is null");
+                logger.e("makePreviewThreadPoolExecutor is null");
             }
 
             currentVideoSettings = null;
@@ -3163,12 +3161,12 @@ public class CameraController {
     }
 
     public void initMakePreviewThreadPoolExecutor(int poolSize,
-                                                  TaskRunnable.ITaskResultValidator<MakePreviewRunnableInfo, MakePreviewRunnable> validator,
+                                                  TaskRunnable.ITaskResultValidator<MakePreviewRunnableInfo, Void, Void, MakePreviewRunnable> validator,
                                                   AbstractSyncStorage<MakePreviewRunnableInfo> storage,
-                                                  TaskRunnable.ITaskRestorer<MakePreviewRunnableInfo, MakePreviewRunnable> restorer,
+                                                  TaskRunnable.ITaskRestorer<MakePreviewRunnableInfo, Void, Void, MakePreviewRunnable> restorer,
                                                   Handler callbackHandler
     ) {
-        logger.debug("initMakePreviewThreadPoolExecutor(), poolSize=" + poolSize);
+        logger.d("initMakePreviewThreadPoolExecutor(), poolSize=" + poolSize);
 
         releaseMakePreviewThreadPoolExecutor();
 
@@ -3185,7 +3183,7 @@ public class CameraController {
             return;
         }
 
-        logger.debug("releaseMakePreviewThreadPoolExecutor()");
+        logger.d("releaseMakePreviewThreadPoolExecutor()");
 
         makePreviewThreadPoolExecutor.shutdown();
         makePreviewThreadPoolExecutor = null;
@@ -3200,7 +3198,7 @@ public class CameraController {
         return previewCallback;
     }
 
-    private void run(@Nullable Runnable run) {
+    private void run(Runnable run) {
         if (run != null) {
             if (callbackHandler != null) {
                 callbackHandler.post(run);
@@ -3393,11 +3391,7 @@ public class CameraController {
                 + TextUtils.join(", ", result);
     }
 
-    public static void setLogger(Logger logger) {
-        CameraController.logger = logger != null ? logger : new Logger.Stub();
-    }
-
-    public class MakePreviewRunnable extends TaskRunnable<MakePreviewRunnableInfo> {
+    public class MakePreviewRunnable extends TaskRunnable<MakePreviewRunnableInfo, Void, Void> {
 
         private final MakePreviewRunnableInfo rInfo;
 
@@ -3407,15 +3401,16 @@ public class CameraController {
         }
 
         @Override
-        public void run() {
+        public Void doWork() throws Throwable {
             doMakePreview();
+            return null;
         }
 
         private void doMakePreview() {
-            logger.debug("doMakePreview()");
+            logger.d("doMakePreview()");
 
             if (!FileHelper.isFileCorrect(rInfo.videoFile) || !FileHelper.isVideo(FileHelper.getFileExtension(rInfo.videoFile.getName()))) {
-                logger.error("incorrect video file: " + rInfo.videoFile + ", size: "
+                logger.e("incorrect video file: " + rInfo.videoFile + ", size: "
                         + (rInfo.videoFile != null ? (rInfo.videoFile.length() / 1024) : 0) + " kB, " + ", exists: "
                         + (rInfo.videoFile != null && rInfo.videoFile.exists()));
 
@@ -3430,16 +3425,16 @@ public class CameraController {
                     (long) (MetadataRetriever.extractMediaDuration(retriever, false) * 0.95), true);
 
             if (rInfo.videoSettings == null || !rInfo.videoSettings.isMakePreviewEnabled()) {
-                logger.warn("making preview is NOT enabled");
+                logger.w("making preview is NOT enabled");
 
                 lastPreviewFile = null;
 
             } else {
-                logger.debug("making preview is enabled");
+                logger.d("making preview is enabled");
 
                 Bitmap previewBitmap = GraphicUtils.makePreviewFromVideoFile(rInfo.videoFile, rInfo.videoSettings.getPreviewGridSize(), true);
                 if (!GraphicUtils.isBitmapCorrect(previewBitmap)) {
-                    logger.error("incorrect preview bitmap: " + previewBitmap);
+                    logger.e("incorrect preview bitmap: " + previewBitmap);
                     return;
                 }
                 lastPreviewFile = new File(rInfo.videoFile.getParentFile(), rInfo.videoFile.getName() + GraphicUtils.getFileExtByCompressFormat(Bitmap.CompressFormat.PNG));
@@ -3518,7 +3513,6 @@ public class CameraController {
 
         CustomPreviewCallback() {
             super(callbackHandler != null ? callbackHandler.getLooper() : Looper.getMainLooper());
-            setFrameLogger(logger);
         }
 
         public void setAllowLogging(boolean allow) {
@@ -3566,14 +3560,14 @@ public class CameraController {
         @SuppressWarnings("deprecation")
         @Override
         public void onPreviewFrame(final byte[] data, final Camera camera) {
-//            logger.debug("onPreviewFrame(), data (length)=" + (data != null ? data.length : 0));
+//            logger.d("onPreviewFrame(), data (length)=" + (data != null ? data.length : 0));
 
             if (isReleased()) {
                 return;
             }
 
             if (data == null) {
-                logger.error("data is null");
+                logger.e("data is null");
                 return;
             }
 
@@ -3582,7 +3576,7 @@ public class CameraController {
                 final long frameTime;
 
                 if (data.length != expectedCallbackBufSize && expectedCallbackBufSize > 0) {
-                    logger.warn("frame data size (" + data.length + ") is not equal expected (" + expectedCallbackBufSize + ")");
+                    logger.w("frame data size (" + data.length + ") is not equal expected (" + expectedCallbackBufSize + ")");
                 }
 
                 if (allowLogging) {
@@ -3603,8 +3597,8 @@ public class CameraController {
     protected class ScaleFactorChangeListener implements SimpleGestureListener.ScaleFactorChangeListener {
 
         @Override
-        public void onScaleFactorChanged(float from, float to) {
-            logger.debug("onScaleFactorChanged(), from=" + from + ", to=" + to);
+        public void onScaleFactorChanged(double from, double to) {
+            logger.d("onScaleFactorChanged(), from=" + from + ", to=" + to);
 
             if (!enableGestureScaling) {
                 return;
@@ -3614,7 +3608,7 @@ public class CameraController {
                 return;
             }
 
-            float scaleDiff;
+            double scaleDiff;
             int zoomDiff;
 
             final int maxZoom = getMaxZoom();
@@ -3622,13 +3616,13 @@ public class CameraController {
             int newZoom;
 
             if (maxZoom == ZOOM_NOT_SPECIFIED || currentZoom == ZOOM_NOT_SPECIFIED) {
-                logger.error("zooming is not supported");
+                logger.e("zooming is not supported");
                 return;
             }
 
-            logger.debug("current zoom: " + currentZoom);
+            logger.d("current zoom: " + currentZoom);
 
-            final int compare = Float.compare(from, to);
+            final int compare = Double.compare(from, to);
             if (compare > 0) { // zoom out
                 scaleDiff = from - to;
                 zoomDiff = (int) (scaleDiff / ZOOM_GESTURE_SCALER);
@@ -3638,7 +3632,7 @@ public class CameraController {
                 } else {
                     newZoom = 0;
                 }
-                logger.debug("zooming out (" + newZoom + ") ...");
+                logger.d("zooming out (" + newZoom + ") ...");
             } else if (compare < 0) { // zoom in
                 scaleDiff = to - from;
                 zoomDiff = (int) (scaleDiff / ZOOM_GESTURE_SCALER);
@@ -3648,26 +3642,26 @@ public class CameraController {
                 } else {
                     newZoom = maxZoom;
                 }
-                logger.debug("zooming in (" + newZoom + ") ...");
+                logger.d("zooming in (" + newZoom + ") ...");
             } else {
                 scaleDiff = 0;
                 zoomDiff = 0;
                 newZoom = currentZoom;
-                logger.debug("zoom unchanged (" + newZoom + ") ...");
+                logger.d("zoom unchanged (" + newZoom + ") ...");
             }
 
-            logger.debug("scale diff: " + scaleDiff + ", zoom diff: " + zoomDiff);
+            logger.d("scale diff: " + scaleDiff + ", zoom diff: " + zoomDiff);
 
             if (newZoom != currentZoom && (newZoom >= ZOOM_MIN && newZoom <= maxZoom)) {
-                logger.debug("setting new zoom: " + newZoom);
+                logger.d("setting new zoom: " + newZoom);
                 if (setZoom(newZoom)) {
                     if (newZoom == ZOOM_MIN) {
                         surfaceGestureListener.setTo(SimpleGestureListener.MIN_SCALE_FACTOR);
                     } else if (newZoom == maxZoom) {
-                        surfaceGestureListener.setTo(surfaceGestureListener.getThresholdValue());
+                        surfaceGestureListener.setTo((float) surfaceGestureListener.getThresholdValue());
                     }
                 } else {
-                    logger.error("cant' set camera zoom: " + newZoom);
+                    logger.e("cant' set camera zoom: " + newZoom);
                 }
             }
 
@@ -3683,7 +3677,7 @@ public class CameraController {
         @Override
         protected void doAction(int orientation) {
 //            if (!isCameraBusy()) {
-                setCameraRotation(orientation);
+            setCameraRotation(orientation);
 //            }
         }
     }
@@ -3694,8 +3688,8 @@ public class CameraController {
             Runnable run = new Runnable() {
                 @Override
                 public void run() {
-                    synchronized (mObservers) {
-                        for (SurfaceHolder.Callback l : mObservers) {
+                    synchronized (observers) {
+                        for (SurfaceHolder.Callback l : observers) {
                             l.surfaceCreated(surfaceHolder);
                         }
                     }
@@ -3708,8 +3702,8 @@ public class CameraController {
             Runnable run = new Runnable() {
                 @Override
                 public void run() {
-                    synchronized (mObservers) {
-                        for (SurfaceHolder.Callback l : mObservers) {
+                    synchronized (observers) {
+                        for (SurfaceHolder.Callback l : observers) {
                             l.surfaceChanged(surfaceHolder, format, width, height);
                         }
                     }
@@ -3722,8 +3716,8 @@ public class CameraController {
             Runnable run = new Runnable() {
                 @Override
                 public void run() {
-                    synchronized (mObservers) {
-                        for (SurfaceHolder.Callback l : mObservers) {
+                    synchronized (observers) {
+                        for (SurfaceHolder.Callback l : observers) {
                             l.surfaceDestroyed(surfaceHolder);
                         }
                     }
@@ -3739,8 +3733,8 @@ public class CameraController {
             Runnable run = new Runnable() {
                 @Override
                 public void run() {
-                    synchronized (mObservers) {
-                        for (ICameraStateChangeListener l : mObservers) {
+                    synchronized (observers) {
+                        for (ICameraStateChangeListener l : observers) {
                             l.onCameraStateChanged(state);
                         }
                     }
@@ -3756,8 +3750,8 @@ public class CameraController {
             Runnable run = new Runnable() {
                 @Override
                 public void run() {
-                    synchronized (mObservers) {
-                        for (ICameraErrorListener l : mObservers) {
+                    synchronized (observers) {
+                        for (ICameraErrorListener l : observers) {
                             l.onCameraError(error);
                         }
                     }
@@ -3773,8 +3767,8 @@ public class CameraController {
             Runnable run = new Runnable() {
                 @Override
                 public void run() {
-                    synchronized (mObservers) {
-                        for (IMediaRecorderErrorListener l : mObservers) {
+                    synchronized (observers) {
+                        for (IMediaRecorderErrorListener l : observers) {
                             l.onMediaRecorderError(error, extra);
                         }
                     }
@@ -3790,8 +3784,8 @@ public class CameraController {
             Runnable run = new Runnable() {
                 @Override
                 public void run() {
-                    synchronized (mObservers) {
-                        for (IPhotoReadyListener l : mObservers) {
+                    synchronized (observers) {
+                        for (IPhotoReadyListener l : observers) {
                             l.onRawDataReady(rawData);
                         }
                     }
@@ -3804,8 +3798,8 @@ public class CameraController {
             Runnable run = new Runnable() {
                 @Override
                 public void run() {
-                    synchronized (mObservers) {
-                        for (IPhotoReadyListener l : mObservers) {
+                    synchronized (observers) {
+                        for (IPhotoReadyListener l : observers) {
                             l.onPhotoFileReady(photoFile, elapsedTime);
                         }
                     }
@@ -3818,8 +3812,8 @@ public class CameraController {
             Runnable run = new Runnable() {
                 @Override
                 public void run() {
-                    synchronized (mObservers) {
-                        for (IPhotoReadyListener l : mObservers) {
+                    synchronized (observers) {
+                        for (IPhotoReadyListener l : observers) {
                             l.onPhotoDataReady(photoData, elapsedTime);
                         }
                     }
@@ -3835,8 +3829,8 @@ public class CameraController {
             Runnable run = new Runnable() {
                 @Override
                 public void run() {
-                    synchronized (mObservers) {
-                        for (IRecordLimitReachedListener l : mObservers) {
+                    synchronized (observers) {
+                        for (IRecordLimitReachedListener l : observers) {
                             l.onRecordLimitReached(videoFile);
                         }
                     }
@@ -3853,8 +3847,8 @@ public class CameraController {
             Runnable run = new Runnable() {
                 @Override
                 public void run() {
-                    synchronized (mObservers) {
-                        for (IVideoPreviewListener l : mObservers) {
+                    synchronized (observers) {
+                        for (IVideoPreviewListener l : observers) {
                             l.onVideoPreviewFailed(videoFile);
                         }
                     }
@@ -3867,8 +3861,8 @@ public class CameraController {
             Runnable run = new Runnable() {
                 @Override
                 public void run() {
-                    synchronized (mObservers) {
-                        for (IVideoPreviewListener l : mObservers) {
+                    synchronized (observers) {
+                        for (IVideoPreviewListener l : observers) {
                             l.onVideoPreviewReady(previewFile, firstFrame, lastFrame, videoFile);
                         }
                     }
@@ -3884,8 +3878,8 @@ public class CameraController {
             Runnable run = new Runnable() {
                 @Override
                 public void run() {
-                    synchronized (mObservers) {
-                        for (IPreviewFrameListener l : mObservers) {
+                    synchronized (observers) {
+                        for (IPreviewFrameListener l : observers) {
                             l.onPreviewStarted();
                         }
                     }
@@ -3898,8 +3892,8 @@ public class CameraController {
             Runnable run = new Runnable() {
                 @Override
                 public void run() {
-                    synchronized (mObservers) {
-                        for (IPreviewFrameListener l : mObservers) {
+                    synchronized (observers) {
+                        for (IPreviewFrameListener l : observers) {
                             l.onPreviewFinished();
                         }
                     }
@@ -3913,8 +3907,8 @@ public class CameraController {
                 @Override
                 public void run() {
                     if (data != null && data.length > 0) {
-                        synchronized (mObservers) {
-                            for (IPreviewFrameListener l : mObservers) {
+                        synchronized (observers) {
+                            for (IPreviewFrameListener l : observers) {
                                 l.onPreviewFrame(data, time);
                             }
                         }
