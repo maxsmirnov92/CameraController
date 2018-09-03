@@ -3,9 +3,8 @@ buildscript {
         jcenter()
     }
     dependencies {
-
-        classpath 'com.jfrog.bintray.gradle:gradle-bintray-plugin:1.7.3'
-        classpath 'com.github.dcendents:android-maven-gradle-plugin:1.4.1'
+        classpath "com.jfrog.bintray.gradle:gradle-bintray-plugin:$bintrayGradleVersion"
+        classpath "com.github.dcendents:android-maven-gradle-plugin:$mavenGradleVersion"
     }
 }
 
@@ -41,8 +40,8 @@ android {
     compileSdkVersion sdkVersion
     buildToolsVersion buildToolsVersion_
 
-    sourceCompatibility = 1.7
-    targetCompatibility = 1.7
+    sourceCompatibility = sourceCompatibilityVersion
+    targetCompatibility = sourceCompatibilityVersion
 
     defaultConfig {
         minSdkVersion minSdkVersion_
@@ -61,8 +60,8 @@ android {
     }
 
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_7
-        targetCompatibility JavaVersion.VERSION_1_7
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
     }
 
     lintOptions {
@@ -84,15 +83,14 @@ task sourcesJar(type: Jar) {
     from android.sourceSets.main.java.srcDirs
 }
 
-
-artifacts {
-    archives sourcesJar
-}
-
 dependencies {
     api fileTree(dir: 'libs', include: ['*.jar'])
 
     api "net.maxsmr:tasksutils:$taskUtilsVersion"
+}
+
+artifacts {
+    archives sourcesJar
 }
 
 uploadArchives {
