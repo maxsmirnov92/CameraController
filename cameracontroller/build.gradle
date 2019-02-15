@@ -1,17 +1,3 @@
-buildscript {
-    repositories {
-        jcenter()
-    }
-    dependencies {
-        classpath "com.jfrog.bintray.gradle:gradle-bintray-plugin:$bintrayGradleVersion"
-        classpath "com.github.dcendents:android-maven-gradle-plugin:$mavenGradleVersion"
-    }
-}
-
-repositories {
-    jcenter()
-}
-
 apply plugin: 'com.android.library'
 
 apply plugin: 'com.jfrog.bintray'
@@ -29,23 +15,26 @@ android {
 
     signingConfigs {
         release {
-            keyAlias 'maxsmirnov'
-            storeFile file('~/.android/release-key.keystore')
-        }
-        debug {
-            storeFile file('~/.android/debug.keystore')
+            def propsFile = rootProject.file('keystore.properties')
+            def props = new Properties()
+            props.load(new FileInputStream(propsFile))
+
+            storeFile file("~/.android/release.keystore")
+            storePassword props['signingPassword']
+            keyAlias "maxsmirnov"
+            keyPassword props['signingPassword']
         }
     }
 
-    compileSdkVersion sdkVersion
-    buildToolsVersion buildToolsVersion_
+    compileSdkVersion rootProject.ext.androidSdkVersion
+    buildToolsVersion rootProject.ext.buildToolsVersion
 
     sourceCompatibility = sourceCompatibilityVersion
     targetCompatibility = sourceCompatibilityVersion
 
     defaultConfig {
-        minSdkVersion minSdkVersion_
-        targetSdkVersion sdkVersion
+        minSdkVersion androidMinSdkVersion
+        targetSdkVersion androidSdkVersion
         versionCode 1
         versionName cameraControllerVersion
         testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"

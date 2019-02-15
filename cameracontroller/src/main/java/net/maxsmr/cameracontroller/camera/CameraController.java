@@ -3409,7 +3409,7 @@ public class CameraController {
         private void doMakePreview() {
             logger.d("doMakePreview()");
 
-            if (!FileHelper.isFileCorrect(rInfo.videoFile) || !FileHelper.isVideo(FileHelper.getFileExtension(rInfo.videoFile.getName()))) {
+            if (!FileHelper.isFileCorrect(rInfo.videoFile)) {
                 logger.e("incorrect video file: " + rInfo.videoFile + ", size: "
                         + (rInfo.videoFile != null ? (rInfo.videoFile.length() / 1024) : 0) + " kB, " + ", exists: "
                         + (rInfo.videoFile != null && rInfo.videoFile.exists()));
@@ -3438,7 +3438,7 @@ public class CameraController {
                     return;
                 }
                 lastPreviewFile = new File(rInfo.videoFile.getParentFile(), rInfo.videoFile.getName() + GraphicUtils.getFileExtByCompressFormat(Bitmap.CompressFormat.PNG));
-                GraphicUtils.writeCompressedBitmapToFile(lastPreviewFile, previewBitmap, Bitmap.CompressFormat.PNG);
+                GraphicUtils.compressBitmapToFile(lastPreviewFile, previewBitmap, Bitmap.CompressFormat.PNG, 100);
             }
 
             videoPreviewListeners.notifyPreviewReady(lastPreviewFile, firstFrame, lastFrame, rInfo.videoFile);
