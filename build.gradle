@@ -38,7 +38,7 @@ ext {
     bintrayGradleVersion = "1.7.3"
     mavenGradleVersion = "1.4.1"
 
-    taskUtilsVersion = "1.0.7.2"
+    taskUtilsVersion = "1.0.7.3"
 }
 
 task clean(type: Delete) {

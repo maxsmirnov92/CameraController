@@ -1,8 +1,8 @@
 package net.maxsmr.cameracontroller.frame.stats;
 
-import android.support.annotation.NonNull;
+import org.jetbrains.annotations.NotNull;
 
 public interface IFrameStatsListener {
 
-    void onFrameStatsUpdated(@NonNull FrameStats stats, long framesSinceLastNotify);
+    void onFrameStatsUpdated(@NotNull FrameStats stats, long framesSinceLastNotify);
 }

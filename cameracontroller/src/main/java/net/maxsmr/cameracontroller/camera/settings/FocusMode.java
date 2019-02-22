@@ -1,6 +1,6 @@
 package net.maxsmr.cameracontroller.camera.settings;
 
-import android.support.annotation.Nullable;
+import org.jetbrains.annotations.Nullable;
 
 import net.maxsmr.commonutils.data.CompareUtils;
 

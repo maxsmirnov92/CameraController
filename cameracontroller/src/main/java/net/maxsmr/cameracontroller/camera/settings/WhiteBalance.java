@@ -1,7 +1,7 @@
 package net.maxsmr.cameracontroller.camera.settings;
 
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import net.maxsmr.commonutils.data.CompareUtils;
 
@@ -67,7 +67,7 @@ public enum  WhiteBalance {
         return null;
     }
 
-    @NonNull
+    @NotNull
     public static WhiteBalance getMinMaxValue(boolean min) {
         WhiteBalance result = WhiteBalance.AUTO;
         for (WhiteBalance v : WhiteBalance.values()) {

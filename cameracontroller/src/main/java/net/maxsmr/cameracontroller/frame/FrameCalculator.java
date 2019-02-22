@@ -2,8 +2,8 @@ package net.maxsmr.cameracontroller.frame;
 
 import android.os.Handler;
 import android.os.Looper;
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import net.maxsmr.cameracontroller.frame.stats.FrameStats;
 import net.maxsmr.cameracontroller.frame.stats.IFrameStatsListener;
@@ -93,11 +93,11 @@ public class FrameCalculator implements IFrameCallback {
         this(Looper.getMainLooper());
     }
 
-    public FrameCalculator(@NonNull Looper notifyLooper) {
+    public FrameCalculator(@NotNull Looper notifyLooper) {
         notifyHandler = new Handler(notifyLooper);
     }
 
-    @NonNull
+    @NotNull
     public Observable<IFrameStatsListener> getFrameStatsObservable() {
         return frameStatsObservable;
     }
@@ -109,6 +109,9 @@ public class FrameCalculator implements IFrameCallback {
     public void setCalculateInterval(long calculateInterval) {
         if (calculateInterval <= 0) {
             throw new IllegalArgumentException("incorrect calculate interval: " + calculateInterval);
+        }
+        if (calculateInterval > notifyInterval) {
+            calculateInterval = DEFAULT_CALCULATE_INTERVAL;
         }
         this.calculateInterval = calculateInterval;
     }
@@ -317,7 +320,7 @@ public class FrameCalculator implements IFrameCallback {
 
     private static class FrameStatsObservable extends Observable<IFrameStatsListener> {
 
-        void notifyStatsUpdated(@NonNull FrameStats frameStats, long framesSinceLastNotify) {
+        void notifyStatsUpdated(@NotNull FrameStats frameStats, long framesSinceLastNotify) {
             synchronized (observers) {
                 for (IFrameStatsListener l : observers) {
                     l.onFrameStatsUpdated(frameStats, framesSinceLastNotify);

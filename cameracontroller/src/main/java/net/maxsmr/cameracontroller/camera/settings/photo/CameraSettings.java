@@ -55,7 +55,7 @@ public class CameraSettings implements Serializable {
     public CameraSettings(ImageFormat previewFormat, ImageFormat pictureFormat,
                           Size pictureSize, int jpegQuality,
                           boolean enableVideoStabilization, int previewFrameRate) {
-        this(previewFormat, pictureFormat, pictureSize.width, pictureSize.height, jpegQuality,
+        this(previewFormat, pictureFormat, pictureSize != null? pictureSize.width : -1, pictureSize != null? pictureSize.height : -1, jpegQuality,
                 enableVideoStabilization, previewFrameRate);
     }
 

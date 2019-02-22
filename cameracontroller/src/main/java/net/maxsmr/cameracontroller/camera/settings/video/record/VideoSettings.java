@@ -62,7 +62,7 @@ public class VideoSettings implements Serializable {
     public VideoSettings(int cameraId, VideoQuality quality, VideoEncoder videoEncoder, AudioEncoder audioEncoder, boolean disableAudio,
                          Size videoSize, int frameRate,
                          boolean enableMakePreview, int previewGridSize) {
-        this(cameraId, quality, videoEncoder, audioEncoder, disableAudio, videoSize.width, videoSize.height, frameRate, enableMakePreview, previewGridSize);
+        this(cameraId, quality, videoEncoder, audioEncoder, disableAudio, videoSize != null? videoSize.width : -1, videoSize != null? videoSize.height : -1, frameRate, enableMakePreview, previewGridSize);
     }
 
     /**
