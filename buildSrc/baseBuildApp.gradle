@@ -56,7 +56,7 @@ android {
     }
 
     buildTypes {
-        degug {
+        debug {
             debuggable true
             minifyEnabled false
         }
@@ -73,15 +73,6 @@ dependencies {
 
     // Multi Dex
     implementation "androidx.multidex:multidex:$multidexVersion"
-
-    // Jetbrains annotations
-    implementation "org.jetbrains:annotations:$jetbrainsAnnotationsVersion"
-
-    // Support
-    implementation "androidx.annotation:annotation:$androidXAnnotationVersion"
-    implementation "androidx.core:core-ktx:$androidXAnnotationVersion"
-
-    implementation "com.google.android.material:material:$androidXVersion"
 
     // Kotlin
     implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlinVersion"

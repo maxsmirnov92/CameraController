@@ -92,13 +92,6 @@ dependencies {
     // libs/*.jar
     api fileTree(dir: 'libs', include: ['*.jar'])
 
-    // Jetbrains annotations
-    api "org.jetbrains:annotations:$jetbrainsAnnotationsVersion"
-
-    // Support
-    api "androidx.annotation:annotation:$androidXAnnotationVersion"
-    api "androidx.core:core-ktx:$androidXAnnotationVersion"
-
     // Kotlin
     implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlinVersion"
     implementation "org.jetbrains.kotlin:kotlin-reflect:$kotlinVersion"
