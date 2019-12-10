@@ -7,8 +7,8 @@ import org.jetbrains.annotations.Nullable;
 
 import net.maxsmr.cameracontroller.frame.stats.FrameStats;
 import net.maxsmr.cameracontroller.frame.stats.IFrameStatsListener;
-import net.maxsmr.commonutils.data.MathUtils;
 import net.maxsmr.commonutils.data.Observable;
+import net.maxsmr.commonutils.data.number.MathUtils;
 import net.maxsmr.commonutils.logger.BaseLogger;
 import net.maxsmr.commonutils.logger.holder.BaseLoggerHolder;
 

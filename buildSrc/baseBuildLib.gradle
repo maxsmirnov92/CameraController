@@ -1,0 +1,111 @@
+//plugins {
+//    id "com.jfrog.bintray" version "1.7.3"
+//}
+apply from: "$rootDir/buildSrc/config.gradle"
+apply from: "$rootDir/buildSrc/buildUtils.gradle"
+
+apply plugin: 'com.android.library'
+apply plugin: 'kotlin-android'
+apply plugin: 'kotlin-android-extensions'
+apply plugin: 'kotlin-kapt'
+
+androidExtensions {
+    // to enable @Parcelize feature
+    experimental = true
+}
+
+
+android {
+    signingConfigs {
+        release {
+            def propsFile = new File("$rootDir/buildSrc/keystore.properties")
+            def props = new Properties()
+            props.load(new FileInputStream(propsFile))
+
+            storeFile file("${System.getenv('ANDROID_HOME')}/release.keystore")
+            storePassword props['signingPassword']
+            keyAlias props['alias']
+            keyPassword props['signingPassword']
+        }
+    }
+
+    compileSdkVersion rootProject.ext.sdkVersion
+    buildToolsVersion rootProject.ext.buildToolsVersion
+
+    defaultConfig {
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.sdkVersion
+        def module = project.getModuleInfoByPath(project.path)
+        versionCode project.getModuleVersionCode(module)
+        versionName project.getModuleVersionName(module)
+        vectorDrawables.useSupportLibrary = true
+    }
+
+    compileOptions {
+        sourceCompatibility sourceCompatibilityVersion
+        targetCompatibility sourceCompatibilityVersion
+    }
+
+    lintOptions {
+        checkReleaseBuilds false
+        abortOnError false
+    }
+
+    sourceSets {
+        main {
+            java.srcDirs += 'src/main/kotlin/'
+            test.java.srcDirs += 'src/test/kotlin'
+            androidTest.java.srcDirs += 'src/androidTest/kotlin'
+        }
+    }
+
+    buildTypes {
+        debug {
+            debuggable true
+            minifyEnabled false
+        }
+        release {
+            signingConfig signingConfigs.release
+            minifyEnabled false
+//            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+
+        libraryVariants.all { variant ->
+            variant.outputs.all { output ->
+                def baseName = "${project.name}-${variant.name}"
+                def outputFileName = "${baseName}.aar"
+                println "Setting aar name to $outputFileName for variant ${variant.name}"
+                output.outputFileName = outputFileName
+                setProperty("archivesBaseName", project.name)
+                if (variant.name == "release") {
+                    project.ext.releaseArchivesBaseName = baseName
+                }
+            }
+        }
+//        productFlavors.all { flavor ->
+//        }
+    }
+}
+
+dependencies {
+
+    // libs/*.jar
+    api fileTree(dir: 'libs', include: ['*.jar'])
+
+    // Jetbrains annotations
+    api "org.jetbrains:annotations:$jetbrainsAnnotationsVersion"
+
+    // Support
+    api "androidx.annotation:annotation:$androidXAnnotationVersion"
+    api "androidx.core:core-ktx:$androidXAnnotationVersion"
+
+    // Kotlin
+    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlinVersion"
+    implementation "org.jetbrains.kotlin:kotlin-reflect:$kotlinVersion"
+}
+
+configurations {
+    javadocDependencies
+}
+
+apply from: "$rootDir/buildSrc/deploy.gradle"

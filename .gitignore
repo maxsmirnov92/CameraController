@@ -5,35 +5,19 @@
 *.iml
 *.ipr
 *.iws
+
+.gradle
 .idea/
 
 #################
-# TeamCity is a build add-in
-_TeamCity*
-
-#################
 # generated files
-build/
+/build
+*/.cxx
+*/*/.cxx
 
-#################
-# Gradle
-.gradle/
-
-.classpath
-.project
-build
-bin
-gen
-proguard-project.txt
-project.properties
-out
-local.*
-app/build
-!build.gradle
-
-.*
-!.gitignore
-!.travis.yml
-bintray.json
+.externalNativeBuild
+/temp
+_mirror
 
 keystore.properties
+local.properties

@@ -1,0 +1,4 @@
+keystore.properties
+/build
+/ci/bintray.json
+/ci/.travis.yml

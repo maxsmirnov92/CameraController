@@ -1,0 +1,101 @@
+apply from: "$rootDir/buildSrc/config.gradle"
+apply from: "$rootDir/buildSrc/buildUtils.gradle"
+
+apply plugin: 'com.android.application'
+apply plugin: 'kotlin-android'
+apply plugin: 'kotlin-android-extensions'
+apply plugin: 'kotlin-kapt'
+
+androidExtensions {
+    // to enable @Parcelize feature
+    experimental = true
+}
+
+android {
+
+    compileSdkVersion rootProject.ext.sdkVersion
+    buildToolsVersion rootProject.ext.buildToolsVersion
+
+    useLibrary 'android.test.runner'
+
+    defaultConfig {
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.sdkVersion
+
+        def module = project.getModuleInfoByPath(project.path)
+        versionCode project.getModuleVersionCode(module)
+        versionName project.getModuleVersionName(module)
+        applicationId project.getAppId(module)
+
+        multiDexEnabled true
+        vectorDrawables.useSupportLibrary = true
+
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    compileOptions {
+        sourceCompatibility sourceCompatibilityVersion
+        targetCompatibility sourceCompatibilityVersion
+    }
+
+    lintOptions {
+        checkReleaseBuilds false
+        abortOnError false
+    }
+
+    testOptions {
+        unitTests.returnDefaultValues = true
+    }
+
+    sourceSets {
+        main {
+            java.srcDirs += 'src/main/kotlin/'
+            test.java.srcDirs += 'src/test/kotlin'
+            androidTest.java.srcDirs += 'src/androidTest/kotlin'
+        }
+    }
+
+    buildTypes {
+        degug {
+            debuggable true
+            minifyEnabled false
+        }
+        release {
+            minifyEnabled false
+//            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+}
+
+
+dependencies {
+    implementation fileTree(dir: 'libs', include: ['*.jar'])
+
+    // Multi Dex
+    implementation "androidx.multidex:multidex:$multidexVersion"
+
+    // Jetbrains annotations
+    implementation "org.jetbrains:annotations:$jetbrainsAnnotationsVersion"
+
+    // Support
+    implementation "androidx.annotation:annotation:$androidXAnnotationVersion"
+    implementation "androidx.core:core-ktx:$androidXAnnotationVersion"
+
+    implementation "com.google.android.material:material:$androidXVersion"
+
+    // Kotlin
+    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlinVersion"
+    implementation "org.jetbrains.kotlin:kotlin-reflect:$kotlinVersion"
+
+    // Tests
+    androidTestImplementation "androidx.test:core:$testCoreVersion"
+    androidTestImplementation "androidx.test.ext:junit:$jUnitExtVersion"
+    androidTestImplementation "androidx.test:rules:$testCoreVersion"
+    androidTestImplementation "junit:junit:$jUnitVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-core:$espressoVersion"
+    androidTestImplementation "androidx.test:runner:$testCoreVersion"
+}
+
+configurations {
+    javadocDependencies
+}

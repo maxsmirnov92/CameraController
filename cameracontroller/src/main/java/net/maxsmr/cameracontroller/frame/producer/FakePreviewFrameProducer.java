@@ -4,8 +4,9 @@ import android.os.Handler;
 import android.os.Looper;
 
 import net.maxsmr.cameracontroller.frame.IFrameCallback;
-import net.maxsmr.commonutils.data.MathUtils;
 import net.maxsmr.tasksutils.ScheduledThreadPoolExecutorManager;
+
+import static net.maxsmr.commonutils.data.number.MathUtils.randInt;
 
 public class FakePreviewFrameProducer {
 
@@ -54,7 +55,7 @@ public class FakePreviewFrameProducer {
         @Override
         public void run() {
             if (mPreviewHandler != null) {
-                int delay = mDelay > 0? MathUtils.randInt(0, mDelay) : 0;
+                int delay = mDelay > 0? randInt(0, mDelay) : 0;
                 mPreviewHandler.postDelayed(new Runnable() {
                     @Override
                     public void run() {

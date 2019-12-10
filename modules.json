@@ -1,0 +1,11 @@
+[
+  {
+    "id": "cameracontroller",
+    "type": "lib",
+    "versionName": "1.2.1",
+    "versionCode": 1,
+    "stable": true,
+    "unstableVersion": 0,
+    "dir": ":cameracontroller"
+  }
+]

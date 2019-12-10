@@ -1,0 +1,13 @@
+{
+  "groupId": "net.maxsmr",
+  "name": "CameraController",
+  "version": "1.1",
+  "stable": true,
+  "unstableVersion": 0,
+  "localRepo": "",
+  "repo": "maven",
+  "bintrayUser": "",
+  "bintrayApiKey":  "",
+  "websiteUrl": "https://github.com/maxsmirnov92/CameraController",
+  "vcsUrl": "https://github.com/maxsmirnov92/CameraController.git"
+}

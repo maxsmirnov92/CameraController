@@ -1,0 +1,128 @@
+import groovy.json.JsonSlurper
+import java.util.regex.Matcher
+import java.util.regex.Pattern
+
+ext.getProjectVersion = { project ->
+    def version = ""
+    if (project != null) {
+        version = project.version
+        if (!project.stable && project.unstableVersion > 0) {
+            version += "-alpha.$unstableVersion"
+        }
+    }
+    if (version.isEmpty()) {
+        throw new GradleException("Project version is not specified")
+    }
+    return version
+}
+
+ext.getProjectInfo = {
+    return new JsonSlurper().parse(new File("$rootDir/projectConfig.json"), 'utf-8')
+}
+
+ext.getModuleVersionNameById = { id ->
+    return getModuleVersionName(getModuleInfoById(id))
+}
+
+ext.getModuleVersionNameByPath = { path ->
+    return getModuleVersionName(getModuleInfoByPath(path))
+}
+
+ext.getModuleVersionName = { module ->
+    def version = ""
+    if (module != null) {
+        version = module.versionName
+        if (version != null && !version.isEmpty()
+                && !module.stable && module.unstableVersion > 0) {
+            version += "-alpha.$unstableVersion"
+        }
+    }
+    if (version == null || version.isEmpty()) {
+        throw new GradleException("Version name for module with with id \"${module.id}\" not found")
+    }
+    return version
+}
+
+ext.getModuleVersionCode = { module ->
+    def version = null
+    if (module != null) {
+        version = module.versionCode
+    }
+    if (version == null) {
+        throw new GradleException("Version code for module with id \"${module.id}\" not found")
+    }
+    return version
+}
+
+ext.getAppId = { module ->
+    def appId = ""
+    if (module != null && module.type == "app") {
+        appId = module.appId
+    }
+    if (appId == null || appId.isEmpty()) {
+        throw new GradleException("App ID for module with id \"${module.id}\" not found")
+    }
+    return appId
+}
+
+// id may not be equal to path, but path is unique
+ext.getModuleInfoById = { id ->
+    if (id.isEmpty()) return ""
+    def modules = new JsonSlurper().parse(new File("$rootDir/modules.json"), 'utf-8')
+    def result = null
+    modules.each { module ->
+        if (module.id == id) {
+            result = module
+            return true
+        }
+    }
+    if (result == null) {
+        throw new GradleException("Module with id \"$id\" not found")
+    }
+    return result
+}
+
+// gradle project.path contains ':'; is unique in rootProject
+ext.getModuleInfoByPath = { path ->
+    if (path.isEmpty()) return ""
+//    def lastIndex = path.lastIndexOf("/")
+//    def lastPathSegment
+//    if (lastIndex < 0 || lastIndex == path.size() - 1) {
+//        lastPathSegment = path
+//    } else {
+//        lastPathSegment = path.substring(lastIndex + 1, path.length())
+//    }
+    def modules = new JsonSlurper().parse(new File("$rootDir/modules.json"), 'utf-8')
+    def result = null
+    modules.each { module ->
+        if (module.dir == path) {
+            result = module
+            return true
+        }
+    }
+    if (result == null) {
+        throw new GradleException("Module with path \"$path\" not found")
+    }
+    return result
+}
+
+ext.getCurrentFlavorOrVariant = { isFlavor ->
+    Gradle gradle = getGradle()
+    String tskReqStr = gradle.getStartParameter().getTaskRequests().toString()
+
+    Pattern pattern
+
+    if (tskReqStr.contains("assemble"))
+        pattern = Pattern.compile("assemble(\\w+)(Release|Debug)")
+    else
+        pattern = Pattern.compile("generate(\\w+)(Release|Debug)")
+
+    Matcher matcher = pattern.matcher(tskReqStr)
+
+    if (matcher.find()) {
+        def result = matcher.group(isFlavor ? 1 : 2).toLowerCase()
+        return result
+    } else {
+        throw new GradleException("No flavor/variant match found")
+    }
+}

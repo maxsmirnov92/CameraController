@@ -20,12 +20,13 @@ import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
-import android.support.v4.util.Pair;
 import android.text.TextUtils;
 import android.util.DisplayMetrics;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.ViewGroup.LayoutParams;
+
+import androidx.core.util.Pair;
 
 import net.maxsmr.cameracontroller.camera.settings.ColorEffect;
 import net.maxsmr.cameracontroller.camera.settings.FlashMode;
@@ -77,7 +78,6 @@ import static net.maxsmr.cameracontroller.camera.settings.photo.CameraSettings.D
 import static net.maxsmr.commonutils.android.gui.GuiUtils.getCorrectedDisplayRotation;
 import static net.maxsmr.commonutils.android.gui.GuiUtils.getCurrentDisplayOrientation;
 import static net.maxsmr.commonutils.android.gui.OrientationIntervalListener.ROTATION_NOT_SPECIFIED;
-
 
 @SuppressWarnings({"deprecation", "unused", "WeakerAccess", "UnusedReturnValue"})
 public class CameraController {
@@ -614,6 +614,7 @@ public class CameraController {
 
     }
 
+    @SuppressWarnings("SuspiciousNameCombination")
     private void setSurfaceViewSize(boolean fullScreen, float scale, SurfaceView surfaceView) {
         logger.d("setSurfaceViewSize(), fullScreen=" + fullScreen + ", scale=" + scale + ", surfaceView=" + surfaceView);
 
@@ -3536,7 +3537,6 @@ public class CameraController {
             previewFrameListeners.notifyPreviewFinished();
         }
 
-        @SuppressWarnings("deprecation")
         @Override
         public void onPreviewFrame(final byte[] data, final Camera camera) {
 //            logger.d("onPreviewFrame(), data (length)=" + (data != null ? data.length : 0));
